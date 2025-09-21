@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestionnaire de Plan de Classe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for drag-and-drop and UI elements */
+        .dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        .drop-zone-highlight {
+            outline: 2px dashed #3b82f6; /* blue-500 */
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        .desk-resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 12px;
+            height: 12px;
+            background-color: #3b82f6;
+            cursor: nwse-resize;
+            border-top-left-radius: 4px;
+        }
+        .classroom-area {
+            background-image: linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .seat-lock-icon {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            cursor: pointer;
+            padding: 2px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 9999px; /* rounded-full */
+            display: none; /* Caché par défaut */
+            z-index: 10;
+        }
+        .drop-zone:hover .seat-lock-icon.unlocked {
+            display: block; /* Montrer l'icône déverrouillée au survol */
+        }
+        .seat-lock-icon.locked {
+            display: block; /* Toujours montrer l'icône verrouillée */
+        }
+        .action-btn {
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            background-color: white;
+            border-radius: 9999px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        .desk-container:hover .action-btn, .rule-container:hover .action-btn {
+            display: flex;
+        }
+        .desk-delete-btn { top: -8px; right: -8px; }
+        .desk-edit-btn { top: -8px; left: -8px; }
+
+        .rule-delete-btn { top: 50%; right: 4px; transform: translateY(-50%); }
+        .rule-edit-btn { top: 50%; right: 30px; transform: translateY(-50%); }
+
+        .student-action-btn {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: white;
+            border-radius: 9999px;
+            display: none; /* Hide by default */
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            z-index: 11;
+        }
+        .student-container:hover .student-action-btn {
+            display: flex; /* Show on hover */
+        }
+        .student-edit-btn { top: -7px; left: -7px; }
+        .student-delete-btn { top: -7px; right: -7px; }
+
+        .notification {
+            animation: fadeInOut 4s ease-in-out forwards;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(10px); }
+            15% { opacity: 1; transform: translateY(0); }
+            85% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(10px); }
+        }
+        .score-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 9999px;
+            color: white;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex h-screen overflow-hidden">
+
+    <!-- Control Panel (Left Column) -->
+    <aside class="w-1/3 max-w-sm h-screen bg-white shadow-lg flex flex-col p-4 overflow-y-auto">
+        <!-- Placement Rules -->
+        <div class="space-y-4 flex-grow flex flex-col">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Ajouter / Modifier une Règle</h3>
+                <form id="add-rule-form" class="space-y-2 text-sm">
+                    <input type="hidden" id="editing-rule-index">
+                    <div>
+                        <label for="rule-student" class="block font-medium">Élève concerné :</label>
+                        <select id="rule-student" class="w-full border rounded-md p-1 mt-1"></select>
+                    </div>
+                    <div>
+                        <label for="rule-type" class="block font-medium">Règle :</label>
+                        <select id="rule-type" class="w-full border rounded-md p-1 mt-1">
+                            <option value="MUST_BE_NEAR">Doit être proche de</option>
+                            <option value="FAR_FROM">Doit être éloigné de</option>
+                            <option value="NEAR_BOARD">Doit être proche du tableau</option>
+                        </select>
+                    </div>
+                    <div id="rule-target-container">
+                        <label for="rule-target-student" class="block font-medium">Élève cible :</label>
+                        <select id="rule-target-student" class="w-full border rounded-md p-1 mt-1"></select>
+                    </div>
+                    <div id="rule-form-buttons" class="flex space-x-2 pt-1">
+                        <button type="submit" id="rule-submit-btn" class="w-full bg-green-500 text-white py-1.5 rounded-md hover:bg-green-600">Ajouter Règle</button>
+                    </div>
+                </form>
+            </div>
+            <div class="flex-grow flex flex-col">
+                <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Règles Actives</h3>
+                <div id="rules-list" class="space-y-1 text-sm overflow-y-auto flex-grow">
+                    <!-- Rules will be injected here -->
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Classroom Area (Main Content) -->
+    <main class="flex-grow h-screen p-4 flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex space-x-2">
+                <button id="add-student-action-btn" class="text-sm bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Élève</button>
+                <button id="add-desk-btn" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Bureau</button>
+                <button id="auto-place-btn" class="text-sm bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors mr-4">Placement Auto</button>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                 <div id="placement-score-display" class="text-lg font-bold text-gray-700"></div>
+                 <button id="score-help-btn" class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 flex items-center justify-center font-bold text-sm">?</button>
+            </div>
+
+            <div class="flex space-x-2">
+                <button id="export-btn" class="text-sm bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Exporter</button>
+                <button id="import-btn" class="text-sm bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Importer</button>
+                <input type="file" id="import-file-input" class="hidden" accept=".json">
+             </div>
+        </div>
+        <div id="classroom-area" class="w-full h-full bg-white rounded-xl shadow-inner relative overflow-hidden classroom-area flex-grow">
+            <!-- Desks and Board will be injected here -->
+        </div>
+    </main>
+    
+    <!-- Notification Container -->
+    <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative">
+            <button id="close-help-btn" class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">À Propos du Score de Placement</h2>
+            <div class="space-y-4 text-gray-700 mt-4">
+                <div>
+                    <h3 class="font-semibold text-gray-800">À quoi sert le score ?</h3>
+                    <p class="text-sm">Le score est un indicateur qui vous aide à évaluer la qualité d'un plan de classe. Son objectif est de mesurer à quel point le placement actuel des élèves respecte l'ensemble des règles que vous avez définies. Un score élevé signifie un meilleur respect des règles.</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">À quoi correspond le pourcentage ?</h3>
+                    <p class="text-sm">Le score global affiché est la <strong>moyenne des pourcentages de respect de chaque règle active</strong>.</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Comment est calculé le score de chaque règle ?</h3>
+                    <ul class="list-disc list-inside space-y-2 pl-2 text-sm">
+                        <li>
+                            <strong>Doit être proche du tableau :</strong> Le score est calculé en fonction de la distance entre la <strong>place</strong> de l'élève et le tableau. Un élève sur la place la plus proche de toute la classe obtient 100%. Un élève sur la place la plus éloignée obtient 0%. Les autres obtiennent un score proportionnel à leur distance.
+                        </li>
+                        <li>
+                            <strong>Doit être proche de :</strong> Le score est de 100% si les deux élèves sont sur le même bureau. Sinon, il diminue proportionnellement à la distance qui les sépare. Un élève placé à la place la plus éloignée possible de son camarade obtient 0%.
+                        </li>
+                        <li>
+                            <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Un élève placé sur la place la plus éloignée possible de son camarade obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
+                        </li>
+                         <li>
+                            <strong>Élève non placé :</strong> Si un élève concerné par une règle n'est pas sur une place, la règle n'est pas respectée et son score est de <strong>0%</strong>.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Modal (hidden by default) -->
+    <div id="student-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+            <h2 id="modal-title" class="text-xl font-bold mb-4">Ajouter un Élève</h2>
+            <form id="student-form">
+                <input type="hidden" id="student-id">
+                <div class="mb-4">
+                    <label for="student-firstName" class="block text-sm font-medium text-gray-700">Prénom</label>
+                    <input type="text" id="student-firstName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                </div>
+                <div class="mb-4">
+                    <label for="student-lastName" class="block text-sm font-medium text-gray-700">Nom</label>
+                    <input type="text" id="student-lastName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="cancel-student-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Annuler</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Sauvegarder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Desk Settings Modal (hidden by default) -->
+    <div id="desk-settings-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl">
+            <h2 class="text-xl font-bold mb-4">Réglages du Bureau</h2>
+            <form id="desk-settings-form">
+                <input type="hidden" id="desk-id-settings">
+                <div class="mb-4">
+                    <label for="desk-name" class="block text-sm font-medium text-gray-700">Nom du bureau</label>
+                    <input type="text" id="desk-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                </div>
+                <div class="mb-4">
+                    <label for="desk-capacity" class="block text-sm font-medium text-gray-700">Nombre de places</label>
+                    <select id="desk-capacity" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
+                        <option value="1">1 place</option>
+                        <option value="2">2 places</option>
+                    </select>
+                </div>
+                 <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Distance des places au tableau</label>
+                    <p id="desk-distance-info" class="mt-1 text-gray-500 text-sm">Calcul...</p>
+                </div>
+                <div class="flex justify-end items-center">
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">OK</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl">
+            <h2 class="text-lg font-bold mb-4">Confirmation requise</h2>
+            <p id="confirmation-message" class="mb-6 text-gray-700">Voulez-vous vraiment effectuer cette action ?</p>
+            <div class="flex justify-end space-x-2">
+                <button id="confirm-cancel-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Annuler</button>
+                <button id="confirm-ok-btn" class="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600">Confirmer</button>
+            </div>
+        </div>
+    </div>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- STATE MANAGEMENT ---
+    let state = {
+        students: [],
+        desks: [],
+        board: null,
+        placements: {}, // { deskId: [studentId1, studentId2 | null] }
+        rules: [],
+        lockedStudents: [], // [studentId1, studentId2]
+    };
+    let seatDistancesCache = new Map();
+    let interSeatDistancesCache = new Map();
+    let ruleScores = new Map();
+
+    // --- DOM ELEMENTS ---
+    const classroomArea = document.getElementById('classroom-area');
+    const rulesList = document.getElementById('rules-list');
+    const placementScoreDisplay = document.getElementById('placement-score-display');
+
+    // Modals
+    const studentModal = document.getElementById('student-modal');
+    const studentForm = document.getElementById('student-form');
+    const deskSettingsModal = document.getElementById('desk-settings-modal');
+    const deskSettingsForm = document.getElementById('desk-settings-form');
+    const confirmationModal = document.getElementById('confirmation-modal');
+    const helpModal = document.getElementById('help-modal');
+    
+    // Buttons
+    const addStudentActionBtn = document.getElementById('add-student-action-btn');
+    const cancelStudentBtn = document.getElementById('cancel-student-btn');
+    const addDeskBtn = document.getElementById('add-desk-btn');
+    const autoPlaceBtn = document.getElementById('auto-place-btn');
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const importFileInput = document.getElementById('import-file-input');
+    const scoreHelpBtn = document.getElementById('score-help-btn');
+    const closeHelpBtn = document.getElementById('close-help-btn');
+    
+    // Forms
+    const addRuleForm = document.getElementById('add-rule-form');
+    const ruleTypeSelect = document.getElementById('rule-type');
+    const ruleTargetContainer = document.getElementById('rule-target-container');
+
+    // --- DATA PERSISTENCE ---
+    function saveState() {
+        localStorage.setItem('classroomPlanState', JSON.stringify(state));
+        console.log("Données sauvegardées dans le localStorage:", JSON.parse(JSON.stringify(state)));
+    }
+
+    // --- UTILITY FUNCTIONS ---
+    const findStudent = (id) => state.students.find(s => s.id === id);
+    const findDesk = (id) => state.desks.find(d => d.id === id);
+    const getStudentFullName = (id) => {
+        const student = findStudent(id);
+        return student ? `${student.firstName} ${student.lastName}` : 'Inconnu';
+    };
+
+    function deleteStudent(studentId) {
+        state.students = state.students.filter(s => s.id !== studentId);
+        for (const deskId in state.placements) {
+            state.placements[deskId] = state.placements[deskId].map(sId => sId === studentId ? null : sId);
+        }
+        state.rules = state.rules.filter(r => r.studentId !== studentId && r.targetStudentId !== studentId);
+        state.lockedStudents = state.lockedStudents.filter(id => id !== studentId);
+        saveState();
+        render();
+        updateStudentsInForms();
+        calculateAndStoreAllRuleScores();
+    }
+    
+    // --- RENDER FUNCTIONS ---
+    function render() {
+        renderClassroom();
+        renderRules();
+    }
+
+    function updateStudentsInForms() {
+        renderRuleForm();
+    }
+
+    function renderClassroom() {
+        classroomArea.innerHTML = '';
+        state.desks.forEach(desk => {
+            const deskEl = document.createElement('div');
+            deskEl.id = desk.id;
+            deskEl.className = 'absolute bg-yellow-600 rounded-md shadow-lg flex flex-col p-1 desk-container';
+            deskEl.style.left = `${desk.x}px`;
+            deskEl.style.top = `${desk.y}px`;
+            deskEl.style.width = `${desk.width}px`;
+            deskEl.style.height = `${desk.height}px`;
+            deskEl.style.cursor = 'move';
+            deskEl.addEventListener('mousedown', handleDeskMoveStart);
+            deskEl.addEventListener('dblclick', () => openDeskSettings(desk.id));
+            const nameEl = document.createElement('div');
+            nameEl.className = 'text-center text-xs text-white font-semibold';
+            nameEl.textContent = desk.name;
+            deskEl.appendChild(nameEl);
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'desk-resize-handle';
+            resizeHandle.addEventListener('mousedown', handleDeskResizeStart);
+            deskEl.appendChild(resizeHandle);
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'action-btn desk-delete-btn';
+            deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 hover:text-red-700" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>`;
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showConfirmation(`Voulez-vous vraiment supprimer le bureau "${desk.name}" ?`, () => {
+                    state.desks = state.desks.filter(d => d.id !== desk.id);
+                    delete state.placements[desk.id];
+                    saveState();
+                    render();
+                    updateAllDistances();
+                });
+            });
+            deskEl.appendChild(deleteBtn);
+            const editBtn = document.createElement('button');
+            editBtn.className = 'action-btn desk-edit-btn';
+            editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openDeskSettings(desk.id);
+            });
+            deskEl.appendChild(editBtn);
+            const seatsContainer = document.createElement('div');
+            seatsContainer.className = 'w-full h-full flex items-center justify-around flex-grow';
+            for (let i = 0; i < desk.capacity; i++) {
+                const seatEl = document.createElement('div');
+                seatEl.className = 'w-full h-full bg-yellow-700 rounded-md m-1 flex items-center justify-center text-white text-xs font-semibold drop-zone relative';
+                seatEl.dataset.deskId = desk.id;
+                seatEl.dataset.seatIndex = i;
+                seatEl.addEventListener('dragover', handleDragOver);
+                seatEl.addEventListener('dragleave', handleDragLeave);
+                seatEl.addEventListener('drop', handleDrop);
+                const placedStudentId = state.placements[desk.id] ? state.placements[desk.id][i] : null;
+                if (placedStudentId) {
+                    const student = findStudent(placedStudentId);
+                    seatEl.classList.add('student-container');
+                    seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
+                    seatEl.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(placedStudentId); });
+                    seatEl.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(placedStudentId)} ?`, () => { deleteStudent(placedStudentId); }); });
+                    seatEl.classList.remove('bg-yellow-700');
+                    seatEl.classList.add('bg-green-600', 'cursor-grab');
+                    seatEl.draggable = true;
+                    seatEl.dataset.studentId = placedStudentId;
+                    seatEl.addEventListener('dragstart', handleDragStart);
+                    const lockBtn = document.createElement('button');
+                    lockBtn.className = 'seat-lock-icon';
+                    const isLocked = state.lockedStudents.includes(placedStudentId);
+                    if (isLocked) {
+                        lockBtn.classList.add('locked');
+                        lockBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="text-gray-700" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2m3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2"/></svg>`;
+                    } else {
+                        lockBtn.classList.add('unlocked');
+                        lockBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-700"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>`;
+                    }
+                    lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleStudentLock(placedStudentId); });
+                    seatEl.appendChild(lockBtn);
+                } else {
+                    seatEl.textContent = 'Libre';
+                }
+                seatsContainer.appendChild(seatEl);
+            }
+            deskEl.appendChild(seatsContainer);
+            classroomArea.appendChild(deskEl);
+        });
+        if (state.board) {
+            const boardEl = document.createElement('div');
+            boardEl.id = 'board';
+            boardEl.className = 'absolute bg-gray-700 rounded-md shadow-lg flex items-center justify-center text-white font-bold';
+            boardEl.style.left = `${state.board.x}px`;
+            boardEl.style.top = `${state.board.y}px`;
+            boardEl.style.width = `${state.board.width}px`;
+            boardEl.style.height = `${state.board.height}px`;
+            boardEl.style.cursor = 'move';
+            boardEl.textContent = 'TABLEAU';
+            boardEl.addEventListener('mousedown', handleBoardMoveStart);
+            classroomArea.appendChild(boardEl);
+        }
+        const placedStudentIds = Object.values(state.placements).flat().filter(id => id);
+        const unplacedStudents = state.students.filter(s => !placedStudentIds.includes(s.id));
+        const boardBottom = state.board ? state.board.y + state.board.height : 20;
+        const areaWidth = classroomArea.offsetWidth;
+        const chipWidth = 120;
+        const chipHeight = 30;
+        const horizontalMargin = 10;
+        const verticalMargin = 10;
+        let currentX = horizontalMargin;
+        let currentY = boardBottom + verticalMargin;
+        unplacedStudents.forEach(student => {
+            if (currentX + chipWidth + horizontalMargin > areaWidth) {
+                currentX = horizontalMargin;
+                currentY += chipHeight + verticalMargin;
+            }
+            const studentChip = document.createElement('div');
+            studentChip.id = `unplaced-${student.id}`;
+            studentChip.dataset.studentId = student.id;
+            studentChip.draggable = true;
+            studentChip.className = 'absolute p-1 px-2 bg-blue-200 text-blue-800 rounded-full text-sm cursor-grab flex items-center justify-center shadow student-container';
+            studentChip.style.left = `${currentX}px`;
+            studentChip.style.top = `${currentY}px`;
+            studentChip.style.width = `${chipWidth}px`;
+            studentChip.style.height = `${chipHeight}px`;
+            studentChip.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
+            studentChip.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(student.id); });
+            studentChip.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(student.id)} ?`, () => { deleteStudent(student.id); }); });
+            studentChip.addEventListener('dragstart', handleDragStart);
+            studentChip.addEventListener('dblclick', () => openStudentModal(student.id));
+            classroomArea.appendChild(studentChip);
+            currentX += chipWidth + horizontalMargin;
+        });
+    }
+
+    function getScoreColor(score) {
+        if (score == null) return 'background-color: #e5e7eb; color: #4b5563;'; // gray-200, gray-600
+        const hue = score * 1.2; // 0 -> 0 (red), 100 -> 120 (green)
+        return `background-color: hsl(${hue}, 80%, 45%); color: white;`;
+    }
+    
+    function renderRules() {
+        rulesList.innerHTML = '';
+        state.rules.forEach((rule, index) => {
+            const ruleDiv = document.createElement('div');
+            ruleDiv.className = 'flex justify-between items-center p-2 bg-white rounded-md relative rule-container';
+            let ruleText = '';
+            const studentName = getStudentFullName(rule.studentId);
+            switch (rule.type) {
+                case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de <b>${getStudentFullName(rule.targetStudentId)}</b>`; break;
+                case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de <b>${getStudentFullName(rule.targetStudentId)}</b>`; break;
+                case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
+            }
+            
+            const score = ruleScores.get(index);
+            const scoreDisplay = score != null ? `${score.toFixed(0)}%` : 'N/A';
+
+            ruleDiv.innerHTML = `
+                <span class="flex-grow pr-12">${ruleText}</span>
+                <span class="score-badge" style="${getScoreColor(score)}">${scoreDisplay}</span>
+                <button data-index="${index}" class="action-btn rule-edit-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 pointer-events-none"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                </button>
+                <button data-index="${index}" class="action-btn rule-delete-btn">
+                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500 pointer-events-none" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
+                </button>
+            `;
+            rulesList.appendChild(ruleDiv);
+        });
+    }
+
+    function renderRuleForm() {
+        const studentSelect = document.getElementById('rule-student');
+        const targetStudentSelect = document.getElementById('rule-target-student');
+        studentSelect.innerHTML = '<option value="">-- Choisir un élève --</option>';
+        targetStudentSelect.innerHTML = '<option value="">-- Choisir un élève --</option>';
+        state.students.forEach(s => {
+            studentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
+            targetStudentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
+        });
+    }
+
+    // --- MODAL & FORM HANDLING ---
+    function openStudentModal(studentId = null) {
+        studentForm.reset();
+        document.getElementById('student-id').value = '';
+        if (studentId) {
+            const student = findStudent(studentId);
+            document.getElementById('modal-title').textContent = 'Modifier un Élève';
+            document.getElementById('student-id').value = student.id;
+            document.getElementById('student-firstName').value = student.firstName;
+            document.getElementById('student-lastName').value = student.lastName;
+        } else {
+            document.getElementById('modal-title').textContent = 'Ajouter un Élève';
+        }
+        studentModal.classList.remove('hidden');
+    }
+
+    function closeStudentModal() {
+        studentModal.classList.add('hidden');
+    }
+    
+    studentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = document.getElementById('student-id').value;
+        const studentData = { firstName: document.getElementById('student-firstName').value, lastName: document.getElementById('student-lastName').value, };
+        let newStudentId;
+        if (id) {
+            const student = findStudent(id);
+            Object.assign(student, studentData);
+        } else {
+            studentData.id = crypto.randomUUID();
+            newStudentId = studentData.id;
+            state.students.push(studentData);
+        }
+        if (newStudentId) {
+            const sortedDesks = [...state.desks].sort((a, b) => a.name.localeCompare(b.name));
+            for (const desk of sortedDesks) {
+                if (!state.placements[desk.id]) {
+                     state.placements[desk.id] = Array(desk.capacity).fill(null);
+                }
+                const emptySeatIndex = state.placements[desk.id].indexOf(null);
+                if (emptySeatIndex !== -1) {
+                    state.placements[desk.id][emptySeatIndex] = newStudentId;
+                    break;
+                }
+            }
+        }
+        saveState();
+        render();
+        updateStudentsInForms();
+        calculateAndStoreAllRuleScores();
+        closeStudentModal();
+    });
+
+    addStudentActionBtn.addEventListener('click', () => openStudentModal());
+    cancelStudentBtn.addEventListener('click', closeStudentModal);
+    scoreHelpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'));
+    closeHelpBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+    helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) {
+            helpModal.classList.add('hidden');
+        }
+    });
+
+    function openDeskSettings(deskId) {
+        const desk = findDesk(deskId);
+        document.getElementById('desk-id-settings').value = desk.id;
+        document.getElementById('desk-name').value = desk.name;
+        document.getElementById('desk-capacity').value = desk.capacity;
+
+        let distanceText = 'N/A';
+        if (seatDistancesCache.size > 0) {
+            const distances = [];
+            for (let i = 0; i < desk.capacity; i++) {
+                const seatId = `${desk.id}-${i}`;
+                if (seatDistancesCache.has(seatId)) {
+                    distances.push(seatDistancesCache.get(seatId).toFixed(0));
+                }
+            }
+            if (distances.length > 0) {
+                distanceText = `${distances.join('px, ')}px`;
+            }
+        }
+        document.getElementById('desk-distance-info').textContent = distanceText;
+
+        deskSettingsModal.classList.remove('hidden');
+    }
+
+    deskSettingsForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const deskId = document.getElementById('desk-id-settings').value;
+        const capacity = parseInt(document.getElementById('desk-capacity').value, 10);
+        const name = document.getElementById('desk-name').value;
+        const desk = findDesk(deskId);
+        desk.name = name;
+        if (desk.capacity !== capacity) {
+            if (capacity < desk.capacity && state.placements[deskId]) {
+                state.placements[deskId] = state.placements[deskId].slice(0, capacity);
+            }
+            desk.capacity = capacity;
+        }
+        saveState();
+        render();
+        updateAllDistances();
+        deskSettingsModal.classList.add('hidden');
+    });
+
+    deskSettingsModal.addEventListener('click', (e) => {
+        if (e.target === deskSettingsModal) {
+            deskSettingsModal.classList.add('hidden');
+        }
+    });
+
+    // --- Confirmation Modal Logic ---
+    let confirmCallback = null;
+    const confirmOkBtn = document.getElementById('confirm-ok-btn');
+    const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+    const confirmationMessage = document.getElementById('confirmation-message');
+
+    function showConfirmation(message, callback) {
+        confirmationMessage.textContent = message;
+        confirmCallback = callback;
+        confirmationModal.classList.remove('hidden');
+    }
+
+    function hideConfirmation() {
+        confirmationModal.classList.add('hidden');
+        confirmCallback = null;
+    }
+
+    confirmOkBtn.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        hideConfirmation();
+    });
+
+    confirmCancelBtn.addEventListener('click', hideConfirmation);
+    confirmationModal.addEventListener('click', (e) => {
+        if (e.target === confirmationModal) {
+            hideConfirmation();
+        }
+    });
+
+    // --- DRAG & DROP ---
+    let draggedStudentId = null;
+
+    function handleDragStart(e) {
+        if (e.target.classList.contains('student-action-btn')) { e.preventDefault(); return; }
+        draggedStudentId = e.target.closest('[data-student-id]').dataset.studentId;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => e.target.closest('[data-student-id]').classList.add('dragging'), 0);
+    }
+    
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.currentTarget.classList.add('drop-zone-highlight');
+    }
+
+    function handleDragLeave(e) {
+        e.currentTarget.classList.remove('drop-zone-highlight');
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        e.currentTarget.classList.remove('drop-zone-highlight');
+        const targetDeskId = e.currentTarget.dataset.deskId;
+        const targetSeatIndex = parseInt(e.currentTarget.dataset.seatIndex, 10);
+        let sourceDeskId = null;
+        for (const deskId in state.placements) {
+            const seatIndex = state.placements[deskId].indexOf(draggedStudentId);
+            if (seatIndex > -1) {
+                sourceDeskId = deskId;
+                state.placements[deskId][seatIndex] = null;
+                break;
+            }
+        }
+        if (!state.placements[targetDeskId]) {
+            const desk = findDesk(targetDeskId);
+            state.placements[targetDeskId] = Array(desk.capacity).fill(null);
+        }
+        const studentInTargetSeat = state.placements[targetDeskId][targetSeatIndex];
+        if (studentInTargetSeat && sourceDeskId) {
+            const oldSeatIndex = state.placements[sourceDeskId].indexOf(null);
+            state.placements[sourceDeskId][oldSeatIndex] = studentInTargetSeat;
+        }
+        state.placements[targetDeskId][targetSeatIndex] = draggedStudentId;
+        draggedStudentId = null;
+        document.querySelector('.dragging')?.classList.remove('dragging');
+        saveState();
+        render();
+        calculateAndStoreAllRuleScores();
+    }
+    
+    classroomArea.addEventListener('dragover', handleDragOver);
+    classroomArea.addEventListener('dragleave', handleDragLeave);
+    classroomArea.addEventListener('drop', (e) => {
+        if (e.target !== classroomArea) { e.currentTarget.classList.remove('drop-zone-highlight'); return; }
+        e.preventDefault();
+        classroomArea.classList.remove('drop-zone-highlight');
+        if (!draggedStudentId) return;
+        for (const deskId in state.placements) {
+            const seatIndex = state.placements[deskId].indexOf(draggedStudentId);
+            if (seatIndex > -1) {
+                state.placements[deskId][seatIndex] = null;
+                break;
+            }
+        }
+        draggedStudentId = null;
+        document.querySelector('.dragging')?.classList.remove('dragging');
+        saveState();
+        render();
+        calculateAndStoreAllRuleScores();
+    });
+
+    // --- Element Moving/Resizing ---
+    function handleDeskMoveStart(e) {
+        if(e.target.closest('.action-btn') || e.target.classList.contains('desk-resize-handle') || e.target.closest('[data-student-id]')) return;
+        e.preventDefault();
+        const deskEl = e.currentTarget;
+        const desk = findDesk(deskEl.id);
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialX = desk.x;
+        const initialY = desk.y;
+        function onMouseMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            desk.x = initialX + dx;
+            desk.y = initialY + dy;
+            deskEl.style.left = `${desk.x}px`;
+            deskEl.style.top = `${desk.y}px`;
+        }
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function handleDeskResizeStart(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const deskEl = e.target.parentElement;
+        const desk = findDesk(deskEl.id);
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialWidth = desk.width;
+        const initialHeight = desk.height;
+        function onMouseMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            desk.width = Math.max(80, initialWidth + dx);
+            desk.height = Math.max(50, initialHeight + dy);
+            deskEl.style.width = `${desk.width}px`;
+            deskEl.style.height = `${desk.height}px`;
+        }
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function handleBoardMoveStart(e) {
+        e.preventDefault();
+        const boardEl = e.currentTarget;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialX = state.board.x;
+        const initialY = state.board.y;
+        function onMouseMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            state.board.x = initialX + dx;
+            state.board.y = initialY + dy;
+            boardEl.style.left = `${state.board.x}px`;
+            boardEl.style.top = `${state.board.y}px`;
+        }
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+    
+    // --- APP LOGIC & RULE EDITING ---
+    addDeskBtn.addEventListener('click', () => {
+        let maxNum = 0;
+        state.desks.forEach(d => {
+            if (d.name && d.name.startsWith('Bureau ')) {
+                const num = parseInt(d.name.replace('Bureau ', ''), 10);
+                if (!isNaN(num) && num > maxNum) { maxNum = num; }
+            }
+        });
+        const newDeskName = `Bureau ${maxNum + 1}`;
+        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 190, height: 60, capacity: 2, name: newDeskName });
+        saveState();
+        render();
+        updateAllDistances();
+    });
+    
+    function resetRuleForm(fullReset = false) {
+        document.getElementById('editing-rule-index').value = '';
+        const submitBtn = document.getElementById('rule-submit-btn');
+        submitBtn.textContent = 'Ajouter Règle';
+        submitBtn.classList.replace('bg-blue-500', 'bg-green-500');
+        submitBtn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
+        document.getElementById('rule-cancel-btn')?.remove();
+
+        if (fullReset) {
+            document.getElementById('rule-student').value = '';
+            document.getElementById('rule-target-student').value = '';
+            // Don't reset rule type, keep last selected
+            ruleTypeSelect.dispatchEvent(new Event('change'));
+        }
+    }
+
+    function openRuleEditor(ruleIndex) {
+        const rule = state.rules[ruleIndex];
+        document.getElementById('editing-rule-index').value = ruleIndex;
+        document.getElementById('rule-student').value = rule.studentId;
+        document.getElementById('rule-type').value = rule.type;
+        
+        ruleTargetContainer.style.display = rule.type === 'NEAR_BOARD' ? 'none' : 'block';
+        if (rule.targetStudentId) {
+            document.getElementById('rule-target-student').value = rule.targetStudentId;
+        }
+
+        const submitBtn = document.getElementById('rule-submit-btn');
+        submitBtn.textContent = 'Modifier Règle';
+        submitBtn.classList.replace('bg-green-500', 'bg-blue-500');
+        submitBtn.classList.replace('hover:bg-green-600', 'hover:bg-blue-600');
+
+        if (!document.getElementById('rule-cancel-btn')) {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.id = 'rule-cancel-btn';
+            cancelBtn.textContent = 'Annuler';
+            cancelBtn.className = 'w-full bg-gray-200 text-gray-800 py-1.5 rounded-md hover:bg-gray-300';
+            cancelBtn.addEventListener('click', () => resetRuleForm(true));
+            document.getElementById('rule-form-buttons').appendChild(cancelBtn);
+        }
+    }
+
+    addRuleForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const editingIndex = document.getElementById('editing-rule-index').value;
+        const studentId = document.getElementById('rule-student').value;
+        const type = document.getElementById('rule-type').value;
+        const targetStudentId = document.getElementById('rule-target-student').value;
+
+        if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
+        if (type !== 'NEAR_BOARD' && !targetStudentId) { showNotification("Veuillez sélectionner un élève cible."); return; }
+        if (type !== 'NEAR_BOARD' && studentId === targetStudentId) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
+        
+        const newRule = { studentId, type };
+        if (type !== 'NEAR_BOARD') { newRule.targetStudentId = targetStudentId; }
+
+        if (editingIndex !== '') {
+            state.rules[parseInt(editingIndex, 10)] = newRule;
+            resetRuleForm(true);
+        } else {
+            state.rules.push(newRule);
+        }
+        
+        saveState();
+        calculateAndStoreAllRuleScores();
+        renderRules();
+    });
+
+    ruleTypeSelect.addEventListener('change', () => {
+        ruleTargetContainer.style.display = ruleTypeSelect.value === 'NEAR_BOARD' ? 'none' : 'block';
+    });
+    
+    rulesList.addEventListener('click', (e) => {
+        const target = e.target.closest('.action-btn');
+        if (!target) return;
+        
+        const ruleIndex = parseInt(target.dataset.index, 10);
+
+        if (target.classList.contains('rule-delete-btn')) {
+            showConfirmation("Voulez-vous vraiment supprimer cette règle ?", () => {
+                state.rules.splice(ruleIndex, 1);
+                saveState();
+                calculateAndStoreAllRuleScores();
+                renderRules();
+            });
+        } else if (target.classList.contains('rule-edit-btn')) {
+            openRuleEditor(ruleIndex);
+        }
+    });
+
+    // --- AUTO PLACEMENT ALGORITHM ---
+    function getCenterOfStateObject(obj) {
+        return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
+    }
+
+    function calculateDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    }
+
+    function updateAllDistances() {
+        updateAllSeatDistances();
+        updateAllInterSeatDistances();
+    }
+
+    function updateAllSeatDistances() {
+        if (!state.board) return;
+        seatDistancesCache.clear();
+        const boardCenter = getCenterOfStateObject(state.board);
+        console.log("--- Calcul des distances des places au tableau ---");
+        state.desks.forEach(desk => {
+            const deskYCenter = desk.y + desk.height / 2;
+            for (let i = 0; i < desk.capacity; i++) {
+                const seatXCenter = desk.x + (desk.width * (2 * i + 1)) / (2 * desk.capacity);
+                const seatCenter = { x: seatXCenter, y: deskYCenter };
+                const distance = calculateDistance(seatCenter, boardCenter);
+                const seatId = `${desk.id}-${i}`;
+                seatDistancesCache.set(seatId, distance);
+                console.log(`Distance pour ${desk.name}, Place ${i+1}: ${distance.toFixed(2)} pixels`);
+            }
+        });
+        console.log("-------------------------------------------------");
+        calculateAndStoreAllRuleScores();
+    }
+
+    function updateAllInterSeatDistances() {
+        interSeatDistancesCache.clear();
+        const allSeats = [];
+        state.desks.forEach(desk => {
+            const deskYCenter = desk.y + desk.height / 2;
+             for (let i = 0; i < desk.capacity; i++) {
+                const seatXCenter = desk.x + (desk.width * (2 * i + 1)) / (2 * desk.capacity);
+                allSeats.push({
+                    id: `${desk.id}-${i}`,
+                    deskId: desk.id,
+                    center: { x: seatXCenter, y: deskYCenter }
+                });
+            }
+        });
+        
+        for(let i = 0; i < allSeats.length; i++) {
+            for(let j = i + 1; j < allSeats.length; j++) {
+                const seatA = allSeats[i];
+                const seatB = allSeats[j];
+                const key = [seatA.id, seatB.id].sort().join('--');
+                let distance;
+                if (seatA.deskId === seatB.deskId) {
+                    distance = 0;
+                } else {
+                    distance = calculateDistance(seatA.center, seatB.center);
+                }
+                interSeatDistancesCache.set(key, distance);
+            }
+        }
+        console.log(`Matrice des distances entre places calculée (${interSeatDistancesCache.size} paires).`);
+        calculateAndStoreAllRuleScores();
+    }
+    
+    function calculateAndStoreAllRuleScores() {
+        ruleScores.clear();
+        state.rules.forEach((rule, index) => {
+            let score = 0;
+            
+            let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
+            let targetIsPlaced = rule.targetStudentId ? getStudentSeatId(rule.targetStudentId, state.placements) !== null : true;
+
+            if (studentIsPlaced && targetIsPlaced) {
+                switch (rule.type) {
+                    case 'NEAR_BOARD':
+                        score = scoreNearBoardRule(rule, state.placements);
+                        break;
+                    case 'MUST_BE_NEAR':
+                        score = scoreMustBeNearRule(rule, state.placements);
+                        break;
+                    case 'FAR_FROM':
+                        score = scoreFarFromRule(rule, state.placements);
+                        break;
+                    default:
+                        score = 100;
+                }
+            }
+            ruleScores.set(index, score);
+        });
+        updateOverallScoreDisplay();
+        renderRules();
+    }
+
+    function updateOverallScoreDisplay() {
+        if (state.rules.length === 0) {
+            placementScoreDisplay.textContent = 'Score : N/A';
+            return;
+        }
+        const scores = Array.from(ruleScores.values());
+        const average = scores.reduce((a, b) => a + b, 0) / scores.length;
+        placementScoreDisplay.textContent = `Score : ${average.toFixed(1)}%`;
+    }
+
+    function getStudentSeatId(studentId, placements) {
+        for (const deskId in placements) {
+            if (placements[deskId]) {
+                const seatIndex = placements[deskId].indexOf(studentId);
+                if (seatIndex !== -1) {
+                    return `${deskId}-${seatIndex}`;
+                }
+            }
+        }
+        return null;
+    }
+
+    function scoreNearBoardRule(rule, placements) {
+        const studentSeatId = getStudentSeatId(rule.studentId, placements);
+        if (!studentSeatId) return 0;
+        if (seatDistancesCache.size === 0) return 100;
+
+        const distances = Array.from(seatDistancesCache.values());
+        const minDistance = Math.min(...distances);
+        const maxDistance = Math.max(...distances);
+
+        if (maxDistance === minDistance) return 100;
+
+        const studentSeatDistance = seatDistancesCache.get(studentSeatId);
+        const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
+        return score;
+    }
+
+    function scoreMustBeNearRule(rule, placements) {
+        const studentSeatId = getStudentSeatId(rule.studentId, placements);
+        const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
+
+        if (!studentSeatId || !targetSeatId) return 0;
+        
+        const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
+        if (allOtherSeatIds.length === 0) return 100;
+
+        let maxDistance = 0;
+        for (const otherSeatId of allOtherSeatIds) {
+            const key = [targetSeatId, otherSeatId].sort().join('--');
+            const distance = interSeatDistancesCache.get(key) || 0;
+            if (distance > maxDistance) {
+                maxDistance = distance;
+            }
+        }
+
+        if (maxDistance === 0) return 100;
+
+        const key = [studentSeatId, targetSeatId].sort().join('--');
+        const actualDistance = interSeatDistancesCache.get(key) || 0;
+        
+        const score = 100 * (1 - (actualDistance / maxDistance));
+        return score;
+    }
+    
+    function scoreFarFromRule(rule, placements) {
+        const studentSeatId = getStudentSeatId(rule.studentId, placements);
+        const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
+
+        if (!studentSeatId || !targetSeatId) return 0;
+        
+        const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
+        if (allOtherSeatIds.length === 0) return 100;
+
+        let maxDistance = 0;
+        for (const otherSeatId of allOtherSeatIds) {
+            const key = [targetSeatId, otherSeatId].sort().join('--');
+            const distance = interSeatDistancesCache.get(key) || 0;
+            if (distance > maxDistance) {
+                maxDistance = distance;
+            }
+        }
+
+        if (maxDistance === 0) return 100;
+
+        const key = [studentSeatId, targetSeatId].sort().join('--');
+        const actualDistance = interSeatDistancesCache.get(key) || 0;
+        
+        const score = 100 * (actualDistance / maxDistance);
+        return score;
+    }
+
+    function calculatePlacementScore(placements) {
+        if (state.rules.length === 0) return 100;
+
+        let totalScore = 0;
+        for (const rule of state.rules) {
+            let ruleScore = 0;
+            let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
+            let targetIsPlaced = rule.targetStudentId ? getStudentSeatId(rule.targetStudentId, placements) !== null : true;
+            
+            if (studentIsPlaced && targetIsPlaced) {
+                switch (rule.type) {
+                    case 'NEAR_BOARD':
+                        ruleScore = scoreNearBoardRule(rule, placements);
+                        break;
+                    case 'MUST_BE_NEAR':
+                        ruleScore = scoreMustBeNearRule(rule, placements);
+                        break;
+                    case 'FAR_FROM':
+                        ruleScore = scoreFarFromRule(rule, placements);
+                        break;
+                    default:
+                        ruleScore = 100;
+                }
+            }
+            totalScore += ruleScore;
+        }
+        return totalScore / state.rules.length;
+    }
+
+    autoPlaceBtn.addEventListener('click', () => {
+        const studentsToPlaceIds = state.students.filter(s => !state.lockedStudents.includes(s.id)).map(s => s.id);
+        
+        const emptySeats = [];
+        state.desks.forEach(desk => {
+            for (let i = 0; i < desk.capacity; i++) {
+                const studentIdOnSeat = state.placements[desk.id] ? state.placements[desk.id][i] : null;
+                if (!studentIdOnSeat || !state.lockedStudents.includes(studentIdOnSeat)) {
+                    emptySeats.push({ deskId: desk.id, seatIndex: i });
+                }
+            }
+        });
+
+        if (studentsToPlaceIds.length > emptySeats.length) {
+            showNotification("Pas assez de places libres pour tous les élèves !");
+            return;
+        }
+
+        showNotification("Recherche du meilleur placement...");
+        placementScoreDisplay.textContent = 'Calcul en cours...';
+
+        const basePlacement = JSON.parse(JSON.stringify(state.placements));
+        for (const deskId in basePlacement) {
+            basePlacement[deskId] = basePlacement[deskId].map(studentId => {
+                return studentId && state.lockedStudents.includes(studentId) ? studentId : null;
+            });
+        }
+
+        let bestPlacement = basePlacement;
+        let bestScore = -1;
+        let iterations = 0;
+        const startTime = Date.now();
+
+        function runSearch() {
+            while (Date.now() - startTime < 5000) {
+                if (bestScore === 100) break;
+
+                const shuffledStudents = [...studentsToPlaceIds].sort(() => 0.5 - Math.random());
+                const shuffledSeats = [...emptySeats].sort(() => 0.5 - Math.random());
+                const currentPlacement = JSON.parse(JSON.stringify(basePlacement));
+                
+                shuffledStudents.forEach((studentId, i) => {
+                    const seat = shuffledSeats[i];
+                    if (!currentPlacement[seat.deskId]) {
+                        const desk = findDesk(seat.deskId);
+                        currentPlacement[seat.deskId] = Array(desk.capacity).fill(null);
+                    }
+                    currentPlacement[seat.deskId][seat.seatIndex] = studentId;
+                });
+
+                const currentScore = calculatePlacementScore(currentPlacement);
+                if (currentScore > bestScore) {
+                    bestScore = currentScore;
+                    bestPlacement = currentPlacement;
+                }
+                iterations++;
+            }
+
+            const duration = (Date.now() - startTime) / 1000;
+            state.placements = bestPlacement;
+            saveState();
+            render();
+            calculateAndStoreAllRuleScores();
+            console.log(`Placement automatique terminé en ${duration.toFixed(2)} secondes. ${iterations} combinaisons testées.`);
+            showNotification(`Meilleur placement trouvé avec un score de ${bestScore.toFixed(1)}% !`);
+        }
+        
+        setTimeout(runSearch, 10);
+    });
+    
+    // --- Notification System ---
+    function showNotification(message) {
+        const container = document.getElementById('notification-container');
+        const notif = document.createElement('div');
+        notif.className = 'bg-gray-800 text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-lg notification';
+        notif.textContent = message;
+        container.appendChild(notif);
+        setTimeout(() => { notif.remove(); }, 4000);
+    }
+
+    // --- Locking Students ---
+    function toggleStudentLock(studentId) {
+        const index = state.lockedStudents.indexOf(studentId);
+        const studentName = getStudentFullName(studentId);
+        if (index > -1) {
+            state.lockedStudents.splice(index, 1);
+            showNotification(`Le placement de ${studentName} a été déverrouillé.`);
+        } else {
+            state.lockedStudents.push(studentId);
+            showNotification(`Le placement de ${studentName} a été verrouillé.`);
+        }
+        saveState();
+        render();
+    }
+    
+    // --- Import / Export ---
+    exportBtn.addEventListener('click', () => {
+        const dataStr = JSON.stringify(state, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', 'plan_de_classe.json');
+        linkElement.click();
+    });
+
+    importBtn.addEventListener('click', () => importFileInput.click());
+    importFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const newState = JSON.parse(e.target.result);
+                if (newState.students && newState.desks) {
+                    state = newState;
+                    saveState();
+                    render();
+                    updateStudentsInForms();
+                    updateAllDistances();
+                    showNotification('Données importées avec succès !');
+                } else { showNotification('Fichier JSON invalide.'); }
+            } catch (error) {
+                showNotification('Erreur lors de la lecture du fichier.');
+            }
+        };
+        reader.readAsText(file);
+        importFileInput.value = '';
+    });
+
+    // --- INITIALIZATION ---
+    function init() {
+        console.log("Tentative de lecture des données depuis le localStorage...");
+        const savedState = localStorage.getItem('classroomPlanState');
+        if (savedState) {
+            console.log("Données trouvées dans le localStorage, chargement:", JSON.parse(savedState));
+            state = JSON.parse(savedState);
+            if (!state.board) {
+                 const caWidth = classroomArea.offsetWidth || 1024;
+                 state.board = { x: caWidth / 2 - 100, y: 10, width: 200, height: 20 };
+            }
+            state.desks.forEach((desk, index) => {
+                if (!desk.name) { desk.name = `Bureau ${index + 1}`; }
+            });
+        } else {
+            console.log("Aucune donnée trouvée, création d'une classe par défaut.");
+            const hermione = { id: crypto.randomUUID(), firstName: 'Hermione', lastName: 'Granger' };
+            const harry = { id: crypto.randomUUID(), firstName: 'Harry', lastName: 'Potter' };
+            state.students.push(hermione, harry);
+
+            state.rules.push({ studentId: hermione.id, type: 'NEAR_BOARD' });
+            
+            state.board = { x: 350, y: 20, width: 200, height: 20 };
+            const deskWidth = 190;
+            const deskHeight = 60;
+            const horizontalSpacing = 40;
+            const verticalSpacing = 50;
+            const numRows = 3;
+            const numCols = 4;
+            const startX = 50; 
+            const startY = 100;
+            let deskCount = 1;
+            for (let row = 0; row < numRows; row++) {
+                for (let col = 0; col < numCols; col++) {
+                    const newDesk = { id: crypto.randomUUID(), x: startX + col * (deskWidth + horizontalSpacing), y: startY + row * (deskHeight + verticalSpacing), width: deskWidth, height: deskHeight, capacity: 2, name: `Bureau ${deskCount++}` };
+                    state.desks.push(newDesk);
+                }
+            }
+            saveState();
+        }
+        render();
+        updateStudentsInForms();
+        updateAllDistances();
+        
+        // Set default form values on load
+        document.getElementById('rule-type').value = 'NEAR_BOARD';
+        ruleTypeSelect.dispatchEvent(new Event('change'));
+    }
+    init();
+});
+</script>
+
+</body>
+</html>
+
