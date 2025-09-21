@@ -1,3 +1,4 @@
+<!-- Last Update: 2025-09-22 01:20 - Add copy/paste functionality for desks with a custom context menu and intelligent naming. -->
 <!-- Last Update: 2025-09-22 00:49 - Fix responsive modals with scrollbars & add version comment. -->
 <!DOCTYPE html>
 <html lang="fr">
@@ -195,6 +196,9 @@
         </div>
     </main>
     
+    <!-- Context Menu -->
+    <div id="context-menu" class="hidden absolute bg-white shadow-md rounded-md p-1 z-50 text-sm"></div>
+
     <!-- Notification Container -->
     <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
@@ -314,12 +318,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let interSeatDistancesCache = new Map();
     let ruleScores = new Map();
     let zoomLevel = 1.0;
+    let clipboard = null; // For copy-paste
 
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
     const classroomContent = document.getElementById('classroom-content');
     const rulesList = document.getElementById('rules-list');
     const placementScoreDisplay = document.getElementById('placement-score-display');
+    const contextMenu = document.getElementById('context-menu');
 
     // Modals
     const studentModal = document.getElementById('student-modal');
