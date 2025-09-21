@@ -35,6 +35,11 @@
             background-image: linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px);
             background-size: 20px 20px;
         }
+        #classroom-content {
+            transform-origin: top left;
+            width: 3000px; /* Large fixed size for the "world" */
+            height: 2000px;
+        }
         .seat-lock-icon {
             position: absolute;
             bottom: 2px;
@@ -173,7 +178,19 @@
              </div>
         </div>
         <div id="classroom-area" class="w-full h-full bg-white rounded-xl shadow-inner relative overflow-auto classroom-area flex-grow">
-            <!-- Desks and Board will be injected here -->
+            <div id="classroom-content">
+                 <!-- Desks and Board will be injected here -->
+            </div>
+            <div id="zoom-controls" class="absolute bottom-4 right-4 bg-white/80 backdrop-blur-sm rounded-lg shadow-md flex items-center p-1 space-x-1">
+                 <button id="zoom-out-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">-</button>
+                 <span id="zoom-display" class="text-sm font-semibold w-12 text-center">100%</span>
+                 <button id="zoom-in-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">+</button>
+                 <button id="zoom-reset-btn" class="w-8 h-8 rounded-md hover:bg-gray-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
+                    </svg>
+                 </button>
+            </div>
         </div>
     </main>
     
@@ -293,9 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let seatDistancesCache = new Map();
     let interSeatDistancesCache = new Map();
     let ruleScores = new Map();
+    let zoomLevel = 1.0;
 
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
+    const classroomContent = document.getElementById('classroom-content');
     const rulesList = document.getElementById('rules-list');
     const placementScoreDisplay = document.getElementById('placement-score-display');
 
@@ -317,6 +336,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const importFileInput = document.getElementById('import-file-input');
     const scoreHelpBtn = document.getElementById('score-help-btn');
     const closeHelpBtn = document.getElementById('close-help-btn');
+    const zoomInBtn = document.getElementById('zoom-in-btn');
+    const zoomOutBtn = document.getElementById('zoom-out-btn');
+    const zoomResetBtn = document.getElementById('zoom-reset-btn');
+    const zoomDisplay = document.getElementById('zoom-display');
     
     // Forms
     const addRuleForm = document.getElementById('add-rule-form');
@@ -361,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderClassroom() {
-        classroomArea.innerHTML = '';
+        classroomContent.innerHTML = '';
         state.desks.forEach(desk => {
             const deskEl = document.createElement('div');
             deskEl.id = desk.id;
@@ -443,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 seatsContainer.appendChild(seatEl);
             }
             deskEl.appendChild(seatsContainer);
-            classroomArea.appendChild(deskEl);
+            classroomContent.appendChild(deskEl);
         });
         if (state.board) {
             const boardEl = document.createElement('div');
@@ -456,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
             boardEl.style.cursor = 'move';
             boardEl.textContent = 'TABLEAU';
             boardEl.addEventListener('mousedown', handleBoardMoveStart);
-            classroomArea.appendChild(boardEl);
+            classroomContent.appendChild(boardEl);
         }
         const placedStudentIds = Object.values(state.placements).flat().filter(id => id);
         const unplacedStudents = state.students.filter(s => !placedStudentIds.includes(s.id));
@@ -487,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
             studentChip.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(student.id)} ?`, () => { deleteStudent(student.id); }); });
             studentChip.addEventListener('dragstart', handleDragStart);
             studentChip.addEventListener('dblclick', () => openStudentModal(student.id));
-            classroomArea.appendChild(studentChip);
+            classroomContent.appendChild(studentChip);
             currentX += chipWidth + horizontalMargin;
         });
     }
@@ -735,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
     classroomArea.addEventListener('dragover', handleDragOver);
     classroomArea.addEventListener('dragleave', handleDragLeave);
     classroomArea.addEventListener('drop', (e) => {
-        if (e.target !== classroomArea) { e.currentTarget.classList.remove('drop-zone-highlight'); return; }
+        if (e.target !== classroomContent && e.target !== classroomArea) { e.currentTarget.classList.remove('drop-zone-highlight'); return; }
         e.preventDefault();
         classroomArea.classList.remove('drop-zone-highlight');
         if (!draggedStudentId) return;
@@ -764,8 +787,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const initialX = desk.x;
         const initialY = desk.y;
         function onMouseMove(e) {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            const dx = (e.clientX - startX) / zoomLevel;
+            const dy = (e.clientY - startY) / zoomLevel;
             desk.x = initialX + dx;
             desk.y = initialY + dy;
             deskEl.style.left = `${desk.x}px`;
@@ -791,8 +814,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const initialWidth = desk.width;
         const initialHeight = desk.height;
         function onMouseMove(e) {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            const dx = (e.clientX - startX) / zoomLevel;
+            const dy = (e.clientY - startY) / zoomLevel;
             desk.width = Math.max(80, initialWidth + dx);
             desk.height = Math.max(50, initialHeight + dy);
             deskEl.style.width = `${desk.width}px`;
@@ -816,8 +839,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const initialX = state.board.x;
         const initialY = state.board.y;
         function onMouseMove(e) {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            const dx = (e.clientX - startX) / zoomLevel;
+            const dy = (e.clientY - startY) / zoomLevel;
             state.board.x = initialX + dx;
             state.board.y = initialY + dy;
             boardEl.style.left = `${state.board.x}px`;
@@ -1334,6 +1357,25 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('rule-type').value = 'NEAR_BOARD';
         ruleTypeSelect.dispatchEvent(new Event('change'));
     }
+
+    // --- Zoom Logic ---
+    function updateZoom() {
+        classroomContent.style.transform = `scale(${zoomLevel})`;
+        zoomDisplay.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
+    zoomInBtn.addEventListener('click', () => {
+        zoomLevel = Math.min(2, zoomLevel + 0.1); // Max zoom 200%
+        updateZoom();
+    });
+    zoomOutBtn.addEventListener('click', () => {
+        zoomLevel = Math.max(0.25, zoomLevel - 0.1); // Min zoom 25%
+        updateZoom();
+    });
+    zoomResetBtn.addEventListener('click', () => {
+        zoomLevel = 1.0;
+        updateZoom();
+    });
+
     init();
 });
 </script>
