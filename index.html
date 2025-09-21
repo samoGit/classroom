@@ -1,3 +1,4 @@
+<!-- Last Update: 2025-09-22 00:49 - Fix responsive modals with scrollbars & add version comment. -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -199,10 +200,12 @@
 
     <!-- Help Modal -->
     <div id="help-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative mx-4">
-            <button id="close-help-btn" class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
-            <h2 class="text-xl font-bold mb-4 border-b pb-2">À Propos du Score de Placement</h2>
-            <div class="space-y-4 text-gray-700 mt-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative mx-4 flex flex-col max-h-[90vh]">
+             <div class="flex-shrink-0">
+                <button id="close-help-btn" class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">À Propos du Score de Placement</h2>
+            </div>
+            <div class="space-y-4 text-gray-700 mt-4 overflow-y-auto">
                 <div>
                     <h3 class="font-semibold text-gray-800">À quoi sert le score ?</h3>
                     <p class="text-sm">Le score est un indicateur qui vous aide à évaluer la qualité d'un plan de classe. Son objectif est de mesurer à quel point le placement actuel des élèves respecte l'ensemble des règles que vous avez définies. Un score élevé signifie un meilleur respect des règles.</p>
