@@ -1,3 +1,5 @@
+<!-- Last Update: 2025-09-22 03:05 - Fix missing resize and move handler functions (v0.15.1). -->
+<!-- Last Update: 2025-09-22 03:02 - Implement desk rotation with accurate score recalculation (v0.15.0). -->
 <!-- Last Update: 2025-09-22 02:43 - Improved intelligent naming for desk duplication (v0.14.0). -->
 <!-- Last Update: 2025-09-22 02:39 - Implemented desk duplication with intelligent naming (v0.13.0). -->
 <!-- Last Update: 2025-09-22 02:30 - Implement desk duplication with intelligent naming (v0.12.0). -->
@@ -82,6 +84,22 @@
         .desk-container:hover .action-btn, .rule-container:hover .action-btn {
             display: flex;
         }
+        .desk-rotate-handle {
+            position: absolute;
+            bottom: -6px;
+            left: -6px;
+            width: 16px;
+            height: 16px;
+            background-color: #6d28d9; /* violet-700 */
+            border: 2px solid white;
+            border-radius: 9999px;
+            cursor: grabbing;
+            display: none;
+            z-index: 11;
+        }
+        .desk-container:hover .desk-rotate-handle {
+            display: block;
+        }
         .desk-delete-btn { top: -8px; right: -8px; }
         .desk-edit-btn { top: -8px; left: -8px; }
         .desk-duplicate-btn { top: -8px; left: 50%; transform: translateX(-50%); }
@@ -165,7 +183,7 @@
                 </div>
             </div>
         </div>
-         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.14.0</span></div>
+         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.15.1</span></div>
     </aside>
 
     <!-- Classroom Area (Main Content) -->
@@ -406,6 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
             deskEl.style.top = `${desk.y}px`;
             deskEl.style.width = `${desk.width}px`;
             deskEl.style.height = `${desk.height}px`;
+            deskEl.style.transform = `rotate(${desk.rotation || 0}deg)`;
             deskEl.style.cursor = 'move';
             deskEl.addEventListener('mousedown', handleDeskMoveStart);
             deskEl.addEventListener('dblclick', () => openDeskSettings(desk.id));
@@ -448,6 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 duplicateDesk(desk.id);
             });
             deskEl.appendChild(duplicateBtn);
+
+            const rotateHandle = document.createElement('div');
+            rotateHandle.className = 'desk-rotate-handle';
+            rotateHandle.addEventListener('mousedown', (e) => handleDeskRotateStart(e, desk.id));
+            deskEl.appendChild(rotateHandle);
 
             const seatsContainer = document.createElement('div');
             seatsContainer.className = 'w-full h-full flex items-center justify-around flex-grow';
@@ -878,6 +902,45 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     }
+
+    function handleDeskRotateStart(e, deskId) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const desk = findDesk(deskId);
+        const deskEl = document.getElementById(deskId);
+
+        const rect = deskEl.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const startAngleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const startDeskRotation = desk.rotation || 0;
+
+        function onMouseMove(moveEvent) {
+            const currentAngleRad = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
+            const angleDifferenceRad = currentAngleRad - startAngleRad;
+            const angleDifferenceDeg = angleDifferenceRad * 180 / Math.PI;
+            
+            let newRotation = startDeskRotation + angleDifferenceDeg;
+            if (moveEvent.shiftKey) { // Snap to 15-degree increments with Shift key
+                newRotation = Math.round(newRotation / 15) * 15;
+            }
+
+            desk.rotation = newRotation;
+            deskEl.style.transform = `rotate(${desk.rotation}deg)`;
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
     
     // --- APP LOGIC & RULE EDITING ---
     addDeskBtn.addEventListener('click', () => {
@@ -889,7 +952,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         const newDeskName = `Bureau ${maxNum + 1}`;
-        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 190, height: 60, capacity: 2, name: newDeskName });
+        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 190, height: 60, capacity: 2, name: newDeskName, rotation: 0 });
         saveState();
         render();
         updateAllDistances();
@@ -903,6 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newDesk.id = crypto.randomUUID();
         newDesk.x += 20;
         newDesk.y += 20;
+        newDesk.rotation = originalDesk.rotation || 0;
 
         let newName;
         const nameMatch = originalDesk.name.match(/(.*[^\d])(\d+)$/);
@@ -1043,56 +1107,67 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAllInterSeatDistances();
     }
 
+    function getAllSeatCoordinates() {
+        const allSeats = [];
+        state.desks.forEach(desk => {
+            const deskCenterX = desk.x + desk.width / 2;
+            const deskCenterY = desk.y + desk.height / 2;
+            const angleRad = (desk.rotation || 0) * Math.PI / 180;
+            const cosAngle = Math.cos(angleRad);
+            const sinAngle = Math.sin(angleRad);
+
+            for (let i = 0; i < desk.capacity; i++) {
+                // 1. Calculate un-rotated seat position relative to desk center
+                const relativeX = (desk.width * (2 * i + 1)) / (2 * desk.capacity) - (desk.width / 2);
+                const relativeY = 0; // Seats are on the horizontal centerline of the desk
+
+                // 2. Rotate this relative position
+                const rotatedRelativeX = relativeX * cosAngle - relativeY * sinAngle;
+                const rotatedRelativeY = relativeX * sinAngle + relativeY * cosAngle;
+
+                // 3. Calculate absolute world coordinates
+                const finalSeatCenterX = deskCenterX + rotatedRelativeX;
+                const finalSeatCenterY = deskCenterY + rotatedRelativeY;
+
+                allSeats.push({
+                    id: `${desk.id}-${i}`,
+                    deskId: desk.id,
+                    center: { x: finalSeatCenterX, y: finalSeatCenterY }
+                });
+            }
+        });
+        return allSeats;
+    }
+
     function updateAllSeatDistances() {
         if (!state.board) return;
         seatDistancesCache.clear();
         const boardCenter = getCenterOfStateObject(state.board);
-        console.log("--- Calcul des distances des places au tableau ---");
-        state.desks.forEach(desk => {
-            const deskYCenter = desk.y + desk.height / 2;
-            for (let i = 0; i < desk.capacity; i++) {
-                const seatXCenter = desk.x + (desk.width * (2 * i + 1)) / (2 * desk.capacity);
-                const seatCenter = { x: seatXCenter, y: deskYCenter };
-                const distance = calculateDistance(seatCenter, boardCenter);
-                const seatId = `${desk.id}-${i}`;
-                seatDistancesCache.set(seatId, distance);
-                console.log(`Distance pour ${desk.name}, Place ${i+1}: ${distance.toFixed(2)} pixels`);
-            }
+        const allSeats = getAllSeatCoordinates();
+        
+        allSeats.forEach(seat => {
+            const distance = calculateDistance(seat.center, boardCenter);
+            seatDistancesCache.set(seat.id, distance);
         });
-        console.log("-------------------------------------------------");
+        
+        console.log("Distances au tableau recalculées avec rotation.");
         calculateAndStoreAllRuleScores();
     }
 
     function updateAllInterSeatDistances() {
         interSeatDistancesCache.clear();
-        const allSeats = [];
-        state.desks.forEach(desk => {
-            const deskYCenter = desk.y + desk.height / 2;
-             for (let i = 0; i < desk.capacity; i++) {
-                const seatXCenter = desk.x + (desk.width * (2 * i + 1)) / (2 * desk.capacity);
-                allSeats.push({
-                    id: `${desk.id}-${i}`,
-                    deskId: desk.id,
-                    center: { x: seatXCenter, y: deskYCenter }
-                });
-            }
-        });
+        const allSeats = getAllSeatCoordinates();
         
         for(let i = 0; i < allSeats.length; i++) {
             for(let j = i + 1; j < allSeats.length; j++) {
                 const seatA = allSeats[i];
                 const seatB = allSeats[j];
                 const key = [seatA.id, seatB.id].sort().join('--');
-                let distance;
-                if (seatA.deskId === seatB.deskId) {
-                    distance = 0;
-                } else {
-                    distance = calculateDistance(seatA.center, seatB.center);
-                }
+                const distance = calculateDistance(seatA.center, seatB.center);
                 interSeatDistancesCache.set(key, distance);
             }
         }
-        console.log(`Matrice des distances entre places calculée (${interSeatDistancesCache.size} paires).`);
+        console.log(`Matrice des distances entre places calculée avec rotation (${interSeatDistancesCache.size} paires).`);
         calculateAndStoreAllRuleScores();
     }
     
@@ -1159,6 +1234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (maxDistance === minDistance) return 100;
 
         const studentSeatDistance = seatDistancesCache.get(studentSeatId);
+        if (studentSeatDistance === undefined) return 0; // Safety check
         const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
         return score;
     }
@@ -1168,6 +1244,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
 
         if (!studentSeatId || !targetSeatId) return 0;
+
+        const studentDeskId = studentSeatId.split('-')[0];
+        const targetDeskId = targetSeatId.split('-')[0];
+        if (studentDeskId === targetDeskId) return 100;
         
         const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
         if (allOtherSeatIds.length === 0) return 100;
@@ -1195,6 +1275,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
 
         if (!studentSeatId || !targetSeatId) return 0;
+        
+        const studentDeskId = studentSeatId.split('-')[0];
+        const targetDeskId = targetSeatId.split('-')[0];
+        if (studentDeskId === targetDeskId) return 0;
         
         const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
         if (allOtherSeatIds.length === 0) return 100;
@@ -1388,6 +1472,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             state.desks.forEach((desk, index) => {
                 if (!desk.name) { desk.name = `Bureau ${index + 1}`; }
+                if (desk.rotation === undefined) { desk.rotation = 0; }
             });
         } else {
             console.log("Aucune donnée trouvée, création d'une classe par défaut.");
@@ -1409,7 +1494,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let deskCount = 1;
             for (let row = 0; row < numRows; row++) {
                 for (let col = 0; col < numCols; col++) {
-                    const newDesk = { id: crypto.randomUUID(), x: startX + col * (deskWidth + horizontalSpacing), y: startY + row * (deskHeight + verticalSpacing), width: deskWidth, height: deskHeight, capacity: 2, name: `Bureau ${deskCount++}` };
+                    const newDesk = { id: crypto.randomUUID(), x: startX + col * (deskWidth + horizontalSpacing), y: startY + row * (deskHeight + verticalSpacing), width: deskWidth, height: deskHeight, capacity: 2, name: `Bureau ${deskCount++}`, rotation: 0 };
                     state.desks.push(newDesk);
                 }
             }
