@@ -1,3 +1,4 @@
+<!-- Last Update: 2025-09-22 02:15 - Replaced non-functional copy/paste with a 'duplicate' button placeholder (v0.12.0). -->
 <!-- Last Update: 2025-09-22 01:45 - Add copy/paste functionality for desks with a custom context menu and intelligent naming (v0.11.0). -->
 <!-- Last Update: 2025-09-22 01:37 - Fix and implement desk copy/paste. Add version display. -->
 <!-- Last Update: 2025-09-22 01:20 - Add copy/paste functionality for desks with a custom context menu and intelligent naming. -->
@@ -79,6 +80,7 @@
         }
         .desk-delete-btn { top: -8px; right: -8px; }
         .desk-edit-btn { top: -8px; left: -8px; }
+        .desk-duplicate-btn { top: -8px; left: 50%; transform: translateX(-50%); }
 
         .rule-delete-btn { top: 50%; right: 4px; transform: translateY(-50%); }
         .rule-edit-btn { top: 50%; right: 30px; transform: translateY(-50%); }
@@ -159,7 +161,7 @@
                 </div>
             </div>
         </div>
-         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.11.0</span></div>
+         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.12.0</span></div>
     </aside>
 
     <!-- Classroom Area (Main Content) -->
@@ -199,9 +201,6 @@
         </div>
     </main>
     
-    <!-- Context Menu -->
-    <div id="context-menu" class="hidden absolute bg-white shadow-md rounded-md p-1 z-50 text-sm"></div>
-
     <!-- Notification Container -->
     <div id="notification-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
@@ -438,6 +437,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 openDeskSettings(desk.id);
             });
             deskEl.appendChild(editBtn);
+
+            const duplicateBtn = document.createElement('button');
+            duplicateBtn.className = 'action-btn desk-duplicate-btn';
+            duplicateBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+            duplicateBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showNotification(`Duplication du bureau "${desk.name}" en cours... (mais pour le moment ça marche pas^^)`);
+            });
+            deskEl.appendChild(duplicateBtn);
+
             const seatsContainer = document.createElement('div');
             seatsContainer.className = 'w-full h-full flex items-center justify-around flex-grow';
             for (let i = 0; i < desk.capacity; i++) {
