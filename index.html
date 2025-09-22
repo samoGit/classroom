@@ -1,3 +1,4 @@
+<!-- Last Update: 2025-09-22 02:30 - Implement desk duplication with intelligent naming (v0.12.0). -->
 <!-- Last Update: 2025-09-22 02:22 - Clean up unused code from previous copy/paste implementation (v0.12.1). -->
 <!-- Last Update: 2025-09-22 02:15 - Replaced non-functional copy/paste with a 'duplicate' button placeholder (v0.11.0). -->
 <!-- Last Update: 2025-09-22 01:45 - Add copy/paste functionality for desks with a custom context menu and intelligent naming (v0.11.0). -->
@@ -162,7 +163,7 @@
                 </div>
             </div>
         </div>
-         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.12.1</span></div>
+         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.12.0</span></div>
     </aside>
 
     <!-- Classroom Area (Main Content) -->
@@ -321,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let interSeatDistancesCache = new Map();
     let ruleScores = new Map();
     let zoomLevel = 1.0;
-
+    
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
     const classroomContent = document.getElementById('classroom-content');
