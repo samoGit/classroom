@@ -177,6 +177,7 @@
                             <option value="MUST_BE_NEAR">Doit être proche de</option>
                             <option value="FAR_FROM">Doit être éloigné de</option>
                             <option value="NEAR_BOARD">Doit être proche du tableau</option>
+                            <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
                         </select>
                     </div>
                     <div id="rule-target-container">
@@ -262,6 +263,9 @@
                             <strong>Doit être proche du tableau :</strong> Le score est calculé uniquement en fonction de la <strong>distance verticale</strong> entre la place de l'élève et le tableau. Un élève sur une rangée de bureaux la plus proche obtient 100%. Un élève sur la rangée la plus éloignée obtient 0%. Les autres obtiennent un score proportionnel à leur distance verticale.
                         </li>
                         <li>
+                            <strong>Doit être proche de mon bureau :</strong> Le score est calculé en fonction de la distance directe entre la place de l'élève et le bureau du professeur. Un élève sur la place la plus proche obtient 100%, le plus éloigné 0%.
+                        </li>
+                        <li>
                             <strong>Doit être proche de / éloigné de :</strong> Si une règle concerne plusieurs élèves cibles, le score est la <strong>moyenne des scores</strong> calculés pour chaque élève cible individuellement.
                         </li>
                         <li>
@@ -311,14 +315,14 @@
                     <label for="desk-name" class="block text-sm font-medium text-gray-700">Nom du bureau (laisser vide pour cacher)</label>
                     <input type="text" id="desk-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
                 </div>
-                <div class="mb-4">
+                <div class="mb-4" id="desk-capacity-container">
                     <label for="desk-capacity" class="block text-sm font-medium text-gray-700">Nombre de places</label>
                     <select id="desk-capacity" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
                         <option value="1">1 place</option>
                         <option value="2">2 places</option>
                     </select>
                 </div>
-                 <div class="mb-4">
+                 <div class="mb-4" id="desk-distance-container">
                     <label class="block text-sm font-medium text-gray-700">Distance des places au tableau</label>
                     <p id="desk-distance-info" class="mt-1 text-gray-500 text-sm">Calcul...</p>
                 </div>
@@ -349,12 +353,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let state = {
         students: [],
         desks: [],
+        teacherDesk: null,
         board: null,
         placements: {}, // { deskId: [studentId1, studentId2 | null] }
         rules: [],
         lockedStudents: [], // [studentId1, studentId2]
     };
     let seatDistancesCache = new Map();
+    let teacherDeskDistancesCache = new Map();
     let interSeatDistancesCache = new Map();
     let ruleScores = new Map();
     let zoomLevel = 1.0;
@@ -582,6 +588,47 @@ document.addEventListener('DOMContentLoaded', () => {
             
             classroomContent.appendChild(boardEl);
         }
+        if (state.teacherDesk) {
+            const td = state.teacherDesk;
+            const deskEl = document.createElement('div');
+            deskEl.id = td.id;
+            deskEl.className = 'absolute bg-yellow-800 rounded-md shadow-lg flex items-center justify-center p-1 desk-container';
+            deskEl.style.left = `${td.x}px`;
+            deskEl.style.top = `${td.y}px`;
+            deskEl.style.width = `${td.width}px`;
+            deskEl.style.height = `${td.height}px`;
+            deskEl.style.transform = `rotate(${td.rotation || 0}deg)`;
+            deskEl.style.cursor = 'move';
+
+            deskEl.addEventListener('mousedown', handleTeacherDeskMoveStart);
+            deskEl.addEventListener('dblclick', () => openDeskSettings(td.id, true));
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'text-center text-sm text-white font-semibold';
+            nameEl.textContent = td.name;
+            deskEl.appendChild(nameEl);
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'desk-resize-handle';
+            resizeHandle.addEventListener('mousedown', handleTeacherDeskResizeStart);
+            deskEl.appendChild(resizeHandle);
+            
+            const rotateHandle = document.createElement('div');
+            rotateHandle.className = 'desk-rotate-handle';
+            rotateHandle.addEventListener('mousedown', handleTeacherDeskRotateStart);
+            deskEl.appendChild(rotateHandle);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'action-btn desk-edit-btn';
+            editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openDeskSettings(td.id, true);
+            });
+            deskEl.appendChild(editBtn);
+
+            classroomContent.appendChild(deskEl);
+        }
         const placedStudentIds = Object.values(state.placements).flat().filter(id => id);
         const unplacedStudents = state.students.filter(s => !placedStudentIds.includes(s.id));
         const boardBottom = state.board ? state.board.y + state.board.height : 20;
@@ -638,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
                 case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
                 case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
+                case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
             }
             
             const score = ruleScores.get(index);
@@ -731,26 +779,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function openDeskSettings(deskId) {
-        const desk = findDesk(deskId);
+    function openDeskSettings(deskId, isTeacher = false) {
+        const desk = isTeacher ? state.teacherDesk : findDesk(deskId);
         document.getElementById('desk-id-settings').value = desk.id;
         document.getElementById('desk-name').value = desk.name;
-        document.getElementById('desk-capacity').value = desk.capacity;
+        
+        const capacityContainer = document.getElementById('desk-capacity-container');
+        const distanceContainer = document.getElementById('desk-distance-container');
 
-        let distanceText = 'N/A';
-        if (seatDistancesCache.size > 0) {
-            const distances = [];
-            for (let i = 0; i < desk.capacity; i++) {
-                const seatId = `${desk.id}-${i}`;
-                if (seatDistancesCache.has(seatId)) {
-                    distances.push(seatDistancesCache.get(seatId).toFixed(0));
+        if (isTeacher) {
+            capacityContainer.style.display = 'none';
+            distanceContainer.style.display = 'none';
+        } else {
+            capacityContainer.style.display = 'block';
+            distanceContainer.style.display = 'block';
+            document.getElementById('desk-capacity').value = desk.capacity;
+
+            let distanceText = 'N/A';
+            if (seatDistancesCache.size > 0) {
+                const distances = [];
+                for (let i = 0; i < desk.capacity; i++) {
+                    const seatId = `${desk.id}-${i}`;
+                    if (seatDistancesCache.has(seatId)) {
+                        distances.push(seatDistancesCache.get(seatId).toFixed(0));
+                    }
+                }
+                if (distances.length > 0) {
+                    distanceText = `${distances.join('px, ')}px`;
                 }
             }
-            if (distances.length > 0) {
-                distanceText = `${distances.join('px, ')}px`;
-            }
+            document.getElementById('desk-distance-info').textContent = distanceText;
         }
-        document.getElementById('desk-distance-info').textContent = distanceText;
 
         deskSettingsModal.classList.remove('hidden');
     }
@@ -758,15 +817,20 @@ document.addEventListener('DOMContentLoaded', () => {
     deskSettingsForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const deskId = document.getElementById('desk-id-settings').value;
-        const capacity = parseInt(document.getElementById('desk-capacity').value, 10);
         const name = document.getElementById('desk-name').value;
-        const desk = findDesk(deskId);
-        desk.name = name;
-        if (desk.capacity !== capacity) {
-            if (capacity < desk.capacity && state.placements[deskId]) {
-                state.placements[deskId] = state.placements[deskId].slice(0, capacity);
+
+        if (deskId === 'teacher-desk') {
+            state.teacherDesk.name = name;
+        } else {
+            const capacity = parseInt(document.getElementById('desk-capacity').value, 10);
+            const desk = findDesk(deskId);
+            desk.name = name;
+            if (desk.capacity !== capacity) {
+                if (capacity < desk.capacity && state.placements[deskId]) {
+                    state.placements[deskId] = state.placements[deskId].slice(0, capacity);
+                }
+                desk.capacity = capacity;
             }
-            desk.capacity = capacity;
         }
         saveState();
         render();
@@ -1067,6 +1131,99 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('mouseup', onMouseUp);
     }
     
+    function handleTeacherDeskMoveStart(e) {
+        if(e.target.closest('.action-btn') || e.target.classList.contains('desk-resize-handle')) return;
+        e.preventDefault();
+        const deskEl = e.currentTarget;
+        const desk = state.teacherDesk;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialX = desk.x;
+        const initialY = desk.y;
+        function onMouseMove(e) {
+            const dx = (e.clientX - startX) / zoomLevel;
+            const dy = (e.clientY - startY) / zoomLevel;
+            desk.x = initialX + dx;
+            desk.y = initialY + dy;
+            deskEl.style.left = `${desk.x}px`;
+            deskEl.style.top = `${desk.y}px`;
+        }
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+    
+    function handleTeacherDeskResizeStart(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const deskEl = e.target.parentElement;
+        const desk = state.teacherDesk;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialWidth = desk.width;
+        const initialHeight = desk.height;
+        function onMouseMove(e) {
+            const dx = (e.clientX - startX) / zoomLevel;
+            const dy = (e.clientY - startY) / zoomLevel;
+            desk.width = Math.max(80, initialWidth + dx);
+            desk.height = Math.max(50, initialHeight + dy);
+            deskEl.style.width = `${desk.width}px`;
+            deskEl.style.height = `${desk.height}px`;
+        }
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function handleTeacherDeskRotateStart(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const desk = state.teacherDesk;
+        const deskEl = document.getElementById(desk.id);
+        const rect = deskEl.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const startAngleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const startDeskRotation = desk.rotation || 0;
+
+        function onMouseMove(moveEvent) {
+            const currentAngleRad = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
+            const angleDifferenceRad = currentAngleRad - startAngleRad;
+            const angleDifferenceDeg = angleDifferenceRad * 180 / Math.PI;
+            
+            let newRotation = startDeskRotation + angleDifferenceDeg;
+            if (moveEvent.shiftKey) {
+                newRotation = Math.round(newRotation / 15) * 15;
+            }
+
+            desk.rotation = newRotation;
+            deskEl.style.transform = `rotate(${desk.rotation}deg)`;
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllDistances();
+            saveState();
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+
+
     // --- APP LOGIC & RULE EDITING ---
     addDeskBtn.addEventListener('click', () => {
         state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 100, height: 60, capacity: 1, name: "", rotation: 0 });
@@ -1147,7 +1304,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('rule-student').value = rule.studentId;
         document.getElementById('rule-type').value = rule.type;
         
-        ruleTargetContainer.style.display = rule.type === 'NEAR_BOARD' ? 'none' : 'block';
+        ruleTypeSelect.dispatchEvent(new Event('change'));
         
         const targetStudentSelect = document.getElementById('rule-target-student');
         if (rule.targetStudentIds) {
@@ -1181,8 +1338,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
 
         if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
-        if (type !== 'NEAR_BOARD' && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
-        if (type !== 'NEAR_BOARD' && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
+        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
+        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
         
         const newRule = { studentId, type, targetStudentIds };
 
@@ -1199,7 +1356,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     ruleTypeSelect.addEventListener('change', () => {
-        ruleTargetContainer.style.display = ruleTypeSelect.value === 'NEAR_BOARD' ? 'none' : 'block';
+        const type = ruleTypeSelect.value;
+        const hideTarget = type === 'NEAR_BOARD' || type === 'NEAR_TEACHER_DESK';
+        ruleTargetContainer.style.display = hideTarget ? 'none' : 'block';
     });
     
     rulesList.addEventListener('click', (e) => {
@@ -1231,6 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateAllDistances() {
         updateAllSeatDistances();
+        updateTeacherDeskDistances();
         updateAllInterSeatDistances();
     }
 
@@ -1275,6 +1435,21 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Distances verticales au tableau recalculées.");
         calculateAndStoreAllRuleScores();
     }
+    
+    function updateTeacherDeskDistances() {
+        if (!state.teacherDesk) return;
+        teacherDeskDistancesCache.clear();
+        const teacherDeskCenter = getCenterOfStateObject(state.teacherDesk);
+        const allSeats = getAllSeatCoordinates();
+
+        allSeats.forEach(seat => {
+            const distance = calculateDistance(seat.center, teacherDeskCenter);
+            teacherDeskDistancesCache.set(seat.id, distance);
+        });
+
+        console.log("Distances au bureau du professeur recalculées.");
+        calculateAndStoreAllRuleScores();
+    }
 
     function updateAllInterSeatDistances() {
         interSeatDistancesCache.clear();
@@ -1302,6 +1477,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 switch (rule.type) {
                     case 'NEAR_BOARD':
                         score = scoreNearBoardRule(rule, state.placements);
+                        break;
+                    case 'NEAR_TEACHER_DESK':
+                        score = scoreNearTeacherDeskRule(rule, state.placements);
                         break;
                     case 'MUST_BE_NEAR':
                         score = scoreMustBeNearRule(rule, state.placements);
@@ -1353,6 +1531,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (maxDistance === minDistance) return 100;
 
         const studentSeatDistance = seatDistancesCache.get(studentSeatId);
+        if (studentSeatDistance === undefined) return 0;
+        const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
+        return score;
+    }
+
+    function scoreNearTeacherDeskRule(rule, placements) {
+        const studentSeatId = getStudentSeatId(rule.studentId, placements);
+        if (!studentSeatId) return 0;
+        if (teacherDeskDistancesCache.size === 0) return 100;
+
+        const distances = Array.from(teacherDeskDistancesCache.values());
+        const minDistance = Math.min(...distances);
+        const maxDistance = Math.max(...distances);
+
+        if (maxDistance === minDistance) return 100;
+
+        const studentSeatDistance = teacherDeskDistancesCache.get(studentSeatId);
         if (studentSeatDistance === undefined) return 0;
         const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
         return score;
@@ -1443,6 +1638,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 switch (rule.type) {
                     case 'NEAR_BOARD':
                         ruleScore = scoreNearBoardRule(rule, placements);
+                        break;
+                    case 'NEAR_TEACHER_DESK':
+                        ruleScore = scoreNearTeacherDeskRule(rule, placements);
                         break;
                     case 'MUST_BE_NEAR':
                         ruleScore = scoreMustBeNearRule(rule, placements);
@@ -1677,6 +1875,17 @@ document.addEventListener('DOMContentLoaded', () => {
                  const defaultBoardWidth = 190 * 5; // 950
                  state.board = { x: caWidth / 2 - defaultBoardWidth / 2, y: 10, width: defaultBoardWidth, height: 25 };
             }
+            if (!state.teacherDesk) {
+                const defaultSingleDeskWidth = 100;
+                const defaultSingleDeskHeight = 60;
+                state.teacherDesk = {
+                    id: 'teacher-desk',
+                    x: 1000, y: 150,
+                    width: defaultSingleDeskWidth * 1.1,
+                    height: defaultSingleDeskHeight * 1.1,
+                    rotation: 0, name: "Mon bureau"
+                };
+            }
             state.desks.forEach((desk, index) => {
                 if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; }
                 if (desk.rotation === undefined) { desk.rotation = 0; }
@@ -1710,6 +1919,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.desks.push(newDesk);
                 }
             }
+
+            const defaultSingleDeskWidth = 100;
+            const defaultSingleDeskHeight = 60;
+            state.teacherDesk = {
+                id: 'teacher-desk',
+                x: startX + totalWidthOfDesks + 50, y: startY,
+                width: defaultSingleDeskWidth * 1.1,
+                height: defaultSingleDeskHeight * 1.1,
+                rotation: 0, name: "Mon bureau"
+            };
+
             saveState();
         }
         render();
@@ -1744,5 +1964,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
-
 
