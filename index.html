@@ -192,6 +192,7 @@
             <div class="flex flex-wrap justify-center gap-2">
                 <button id="add-student-action-btn" class="text-sm bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Élève</button>
                 <button id="add-desk-btn" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Bureau</button>
+                <button id="add-desk-double-btn" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Bureau Double</button>
                 <button id="auto-place-btn" class="text-sm bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Placement Auto</button>
             </div>
             
@@ -201,14 +202,14 @@
             </div>
 
             <div class="flex flex-wrap justify-center gap-2">
-                <button id="export-btn" class="text-sm bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Exporter</button>
-                <button id="import-btn" class="text-sm bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Importer</button>
+                <button id="export-btn" class="text-sm bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Enregistrer</button>
+                <button id="import-btn" class="text-sm bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ouvrir</button>
                 <input type="file" id="import-file-input" class="hidden" accept=".json">
              </div>
         </div>
         <div id="classroom-area" class="w-full h-full bg-white rounded-xl shadow-inner relative overflow-auto classroom-area flex-grow">
             <div id="classroom-content">
-                  <!-- Desks and Board will be injected here -->
+                    <!-- Desks and Board will be injected here -->
             </div>
             <div id="zoom-controls" class="absolute bottom-4 right-4 bg-white/80 backdrop-blur-sm rounded-lg shadow-md flex items-center p-1 space-x-1">
                  <button id="zoom-out-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">-</button>
@@ -216,7 +217,7 @@
                  <button id="zoom-in-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">+</button>
                  <button id="zoom-reset-btn" class="w-8 h-8 rounded-md hover:bg-gray-200">
                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
-                         <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
+                           <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
                      </svg>
                  </button>
             </div>
@@ -230,9 +231,9 @@
     <div id="help-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative mx-4 flex flex-col max-h-[90vh]">
              <div class="flex-shrink-0">
-                 <button id="close-help-btn" class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
-                 <h2 class="text-xl font-bold mb-4 border-b pb-2">À Propos du Score de Placement</h2>
-            </div>
+                  <button id="close-help-btn" class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800">&times;</button>
+                  <h2 class="text-xl font-bold mb-4 border-b pb-2">À Propos du Score de Placement</h2>
+             </div>
             <div class="space-y-4 text-gray-700 mt-4 overflow-y-auto">
                 <div>
                     <h3 class="font-semibold text-gray-800">À quoi sert le score ?</h3>
@@ -254,7 +255,7 @@
                         <li>
                             <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Un élève placé sur la place la plus éloignée possible de son camarade obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
                         </li>
-                         <li>
+                          <li>
                             <strong>Élève non placé :</strong> Si un élève concerné par une règle n'est pas sur une place, la règle n'est pas respectée et son score est de <strong>0%</strong>.
                         </li>
                     </ul>
@@ -292,8 +293,8 @@
             <form id="desk-settings-form">
                 <input type="hidden" id="desk-id-settings">
                 <div class="mb-4">
-                    <label for="desk-name" class="block text-sm font-medium text-gray-700">Nom du bureau</label>
-                    <input type="text" id="desk-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                    <label for="desk-name" class="block text-sm font-medium text-gray-700">Nom du bureau (laisser vide pour cacher)</label>
+                    <input type="text" id="desk-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
                 </div>
                 <div class="mb-4">
                     <label for="desk-capacity" class="block text-sm font-medium text-gray-700">Nombre de places</label>
@@ -361,6 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const addStudentActionBtn = document.getElementById('add-student-action-btn');
     const cancelStudentBtn = document.getElementById('cancel-student-btn');
     const addDeskBtn = document.getElementById('add-desk-btn');
+    const addDeskDoubleBtn = document.getElementById('add-desk-double-btn');
     const autoPlaceBtn = document.getElementById('auto-place-btn');
     const exportBtn = document.getElementById('export-btn');
     const importBtn = document.getElementById('import-btn');
@@ -428,10 +430,14 @@ document.addEventListener('DOMContentLoaded', () => {
             deskEl.style.cursor = 'move';
             deskEl.addEventListener('mousedown', handleDeskMoveStart);
             deskEl.addEventListener('dblclick', () => openDeskSettings(desk.id));
-            const nameEl = document.createElement('div');
-            nameEl.className = 'text-center text-xs text-white font-semibold';
-            nameEl.textContent = desk.name;
-            deskEl.appendChild(nameEl);
+
+            if (desk.name && desk.name.trim() !== '') {
+                const nameEl = document.createElement('div');
+                nameEl.className = 'text-center text-xs text-white font-semibold';
+                nameEl.textContent = desk.name;
+                deskEl.appendChild(nameEl);
+            }
+            
             const resizeHandle = document.createElement('div');
             resizeHandle.className = 'desk-resize-handle';
             resizeHandle.addEventListener('mousedown', handleDeskResizeStart);
@@ -441,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 hover:text-red-700" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>`;
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                showConfirmation(`Voulez-vous vraiment supprimer le bureau "${desk.name}" ?`, () => {
+                showConfirmation(`Voulez-vous vraiment supprimer le bureau "${desk.name || 'sans nom'}" ?`, () => {
                     state.desks = state.desks.filter(d => d.id !== desk.id);
                     delete state.placements[desk.id];
                     saveState();
@@ -643,7 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.students.push(studentData);
         }
         if (newStudentId) {
-            const sortedDesks = [...state.desks].sort((a, b) => a.name.localeCompare(b.name));
+            const sortedDesks = [...state.desks].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             for (const desk of sortedDesks) {
                 if (!state.placements[desk.id]) {
                      state.placements[desk.id] = Array(desk.capacity).fill(null);
@@ -944,20 +950,19 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- APP LOGIC & RULE EDITING ---
     addDeskBtn.addEventListener('click', () => {
-        let maxNum = 0;
-        state.desks.forEach(d => {
-            if (d.name && d.name.startsWith('Bureau ')) {
-                const num = parseInt(d.name.replace('Bureau ', ''), 10);
-                if (!isNaN(num) && num > maxNum) { maxNum = num; }
-            }
-        });
-        const newDeskName = `Bureau ${maxNum + 1}`;
-        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 190, height: 60, capacity: 2, name: newDeskName, rotation: 0 });
+        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 100, height: 60, capacity: 1, name: "", rotation: 0 });
         saveState();
         render();
         updateAllDistances();
     });
     
+    addDeskDoubleBtn.addEventListener('click', () => {
+        state.desks.push({ id: crypto.randomUUID(), x: 50, y: 50, width: 190, height: 60, capacity: 2, name: "", rotation: 0 });
+        saveState();
+        render();
+        updateAllDistances();
+    });
+
     function duplicateDesk(deskId) {
         const originalDesk = findDesk(deskId);
         if (!originalDesk) return;
@@ -968,38 +973,39 @@ document.addEventListener('DOMContentLoaded', () => {
         newDesk.y += 20;
         newDesk.rotation = originalDesk.rotation || 0;
 
-        let newName;
-        const nameMatch = originalDesk.name.match(/(.*[^\d])(\d+)$/);
-
-        if (nameMatch) {
-            // Case 1: Name ends with a number (e.g., "Bureau 12" -> "Bureau 13")
-            const baseName = nameMatch[1];
-            let nextNum = parseInt(nameMatch[2], 10) + 1;
-            
-            do {
-                newName = `${baseName}${nextNum}`;
-                nextNum++;
-            } while (state.desks.some(d => d.name === newName));
-
+        if (!originalDesk.name || originalDesk.name.trim() === '') {
+            newDesk.name = ""; // If original has no name, new one also has no name
         } else {
-            // Case 2: Name does not end with a number (e.g., "Table du fond" -> "Table du fond 2")
-            const baseName = originalDesk.name;
-            let copyIndex = 2;
+            let newName;
+            const nameMatch = originalDesk.name.match(/(.*[^\d])(\d+)$/);
 
-            newName = `${baseName} ${copyIndex}`;
-            while (state.desks.some(d => d.name === newName)) {
-                copyIndex++;
+            if (nameMatch) {
+                const baseName = nameMatch[1];
+                let nextNum = parseInt(nameMatch[2], 10) + 1;
+                
+                do {
+                    newName = `${baseName}${nextNum}`;
+                    nextNum++;
+                } while (state.desks.some(d => d.name === newName));
+
+            } else {
+                const baseName = originalDesk.name;
+                let copyIndex = 2;
+
                 newName = `${baseName} ${copyIndex}`;
+                while (state.desks.some(d => d.name === newName)) {
+                    copyIndex++;
+                    newName = `${baseName} ${copyIndex}`;
+                }
             }
+            newDesk.name = newName;
         }
-        
-        newDesk.name = newName;
 
         state.desks.push(newDesk);
         saveState();
         render();
         updateAllDistances();
-        showNotification(`Bureau "${originalDesk.name}" dupliqué en "${newName}".`);
+        showNotification(`Bureau dupliqué.`);
     }
 
     function resetRuleForm(fullReset = false) {
@@ -1471,7 +1477,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  state.board = { x: caWidth / 2 - 100, y: 10, width: 200, height: 20 };
             }
             state.desks.forEach((desk, index) => {
-                if (!desk.name) { desk.name = `Bureau ${index + 1}`; }
+                if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; } // Backwards compatibility for old saves
                 if (desk.rotation === undefined) { desk.rotation = 0; }
             });
         } else {
@@ -1491,10 +1497,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const numCols = 4;
             const startX = 50; 
             const startY = 100;
-            let deskCount = 1;
             for (let row = 0; row < numRows; row++) {
                 for (let col = 0; col < numCols; col++) {
-                    const newDesk = { id: crypto.randomUUID(), x: startX + col * (deskWidth + horizontalSpacing), y: startY + row * (deskHeight + verticalSpacing), width: deskWidth, height: deskHeight, capacity: 2, name: `Bureau ${deskCount++}`, rotation: 0 };
+                    const newDesk = { id: crypto.randomUUID(), x: startX + col * (deskWidth + horizontalSpacing), y: startY + row * (deskHeight + verticalSpacing), width: deskWidth, height: deskHeight, capacity: 2, name: ``, rotation: 0 };
                     state.desks.push(newDesk);
                 }
             }
