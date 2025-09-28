@@ -520,7 +520,9 @@ document.addEventListener('DOMContentLoaded', () => {
             deskEl.appendChild(rotateHandle);
 
             const seatsContainer = document.createElement('div');
-            seatsContainer.className = 'w-full h-full flex items-center justify-around flex-grow';
+            const hasName = desk.name && desk.name.trim() !== '';
+            const marginTopClass = hasName ? 'mt-1' : 'mt-4';
+            seatsContainer.className = `w-full h-full flex items-center justify-around flex-grow ${marginTopClass}`;
             for (let i = 0; i < desk.capacity; i++) {
                 const seatEl = document.createElement('div');
                 seatEl.className = 'w-full h-full bg-yellow-700 rounded-md m-1 flex items-center justify-center text-white text-xs font-semibold drop-zone relative';
@@ -1742,6 +1744,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
-
 
 
