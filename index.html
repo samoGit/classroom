@@ -168,8 +168,8 @@
                         </select>
                     </div>
                     <div id="rule-target-container">
-                        <label for="rule-target-student" class="block font-medium">Élève cible :</label>
-                        <select id="rule-target-student" class="w-full border rounded-md p-1 mt-1"></select>
+                        <label for="rule-target-student" class="block font-medium">Élève(s) cible(s) :</label>
+                        <select id="rule-target-student" class="w-full border rounded-md p-1 mt-1 h-24" multiple></select>
                     </div>
                     <div id="rule-form-buttons" class="flex space-x-2 pt-1">
                         <button type="submit" id="rule-submit-btn" class="w-full bg-green-500 text-white py-1.5 rounded-md hover:bg-green-600">Ajouter Règle</button>
@@ -250,13 +250,16 @@
                             <strong>Doit être proche du tableau :</strong> Le score est calculé en fonction de la distance entre la <strong>place</strong> de l'élève et le tableau. Un élève sur la place la plus proche de toute la classe obtient 100%. Un élève sur la place la plus éloignée obtient 0%. Les autres obtiennent un score proportionnel à leur distance.
                         </li>
                         <li>
-                            <strong>Doit être proche de :</strong> Le score est de 100% si les deux élèves sont sur le même bureau. Sinon, il diminue proportionnellement à la distance qui les sépare. Un élève placé à la place la plus éloignée possible de son camarade obtient 0%.
+                            <strong>Doit être proche de / éloigné de :</strong> Si une règle concerne plusieurs élèves cibles, le score est la <strong>moyenne des scores</strong> calculés pour chaque élève cible individuellement.
                         </li>
                         <li>
-                            <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Un élève placé sur la place la plus éloignée possible de son camarade obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
+                            <strong>Doit être proche de :</strong> Le score pour une paire d'élèves est de 100% s'ils sont sur le même bureau. Sinon, il diminue proportionnellement à la distance qui les sépare. Une paire d'élèves aux deux places les plus éloignées possibles obtient 0%.
+                        </li>
+                        <li>
+                            <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Une paire d'élèves aux deux places les plus éloignées possible obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
                         </li>
                           <li>
-                            <strong>Élève non placé :</strong> Si un élève concerné par une règle n'est pas sur une place, la règle n'est pas respectée et son score est de <strong>0%</strong>.
+                            <strong>Élève non placé :</strong> Si l'élève concerné par une règle n'est pas placé, la règle obtient <strong>0%</strong>. Si un des élèves cibles n'est pas placé, seule la partie de la règle le concernant obtient 0%, ce qui est ensuite moyenné avec les autres.
                         </li>
                     </ul>
                 </div>
@@ -385,6 +388,24 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Données sauvegardées dans le localStorage:", JSON.parse(JSON.stringify(state)));
     }
 
+    function migrateState(stateToMigrate) {
+        if (stateToMigrate && stateToMigrate.rules) {
+            stateToMigrate.rules.forEach(rule => {
+                // Check for old format (single targetStudentId) and convert it
+                if (rule.targetStudentId && !rule.targetStudentIds) {
+                    rule.targetStudentIds = [rule.targetStudentId];
+                }
+                delete rule.targetStudentId; // Remove old property
+
+                // Ensure targetStudentIds is always an array, even if empty
+                if (!rule.targetStudentIds) {
+                    rule.targetStudentIds = [];
+                }
+            });
+        }
+        return stateToMigrate;
+    }
+
     // --- UTILITY FUNCTIONS ---
     const findStudent = (id) => state.students.find(s => s.id === id);
     const findDesk = (id) => state.desks.find(d => d.id === id);
@@ -398,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const deskId in state.placements) {
             state.placements[deskId] = state.placements[deskId].map(sId => sId === studentId ? null : sId);
         }
-        state.rules = state.rules.filter(r => r.studentId !== studentId && r.targetStudentId !== studentId);
+        state.rules = state.rules.filter(r => r.studentId !== studentId && !(r.targetStudentIds && r.targetStudentIds.includes(studentId)));
         state.lockedStudents = state.lockedStudents.filter(id => id !== studentId);
         saveState();
         render();
@@ -581,9 +602,14 @@ document.addEventListener('DOMContentLoaded', () => {
             ruleDiv.className = 'flex justify-between items-center p-2 bg-white rounded-md relative rule-container';
             let ruleText = '';
             const studentName = getStudentFullName(rule.studentId);
+            let targetText = '';
+            if (rule.targetStudentIds && rule.targetStudentIds.length > 0) {
+                 targetText = `<b>${rule.targetStudentIds.map(getStudentFullName).join(', ')}</b>`;
+            }
+
             switch (rule.type) {
-                case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de <b>${getStudentFullName(rule.targetStudentId)}</b>`; break;
-                case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de <b>${getStudentFullName(rule.targetStudentId)}</b>`; break;
+                case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
+                case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
                 case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
             }
             
@@ -1017,9 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('rule-cancel-btn')?.remove();
 
         if (fullReset) {
-            document.getElementById('rule-student').value = '';
-            document.getElementById('rule-target-student').value = '';
-            // Don't reset rule type, keep last selected
+            addRuleForm.reset();
             ruleTypeSelect.dispatchEvent(new Event('change'));
         }
     }
@@ -1031,8 +1055,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('rule-type').value = rule.type;
         
         ruleTargetContainer.style.display = rule.type === 'NEAR_BOARD' ? 'none' : 'block';
-        if (rule.targetStudentId) {
-            document.getElementById('rule-target-student').value = rule.targetStudentId;
+        
+        const targetStudentSelect = document.getElementById('rule-target-student');
+        if (rule.targetStudentIds) {
+            Array.from(targetStudentSelect.options).forEach(option => {
+                option.selected = rule.targetStudentIds.includes(option.value);
+            });
         }
 
         const submitBtn = document.getElementById('rule-submit-btn');
@@ -1056,14 +1084,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const editingIndex = document.getElementById('editing-rule-index').value;
         const studentId = document.getElementById('rule-student').value;
         const type = document.getElementById('rule-type').value;
-        const targetStudentId = document.getElementById('rule-target-student').value;
+        const targetStudentSelect = document.getElementById('rule-target-student');
+        const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
 
         if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
-        if (type !== 'NEAR_BOARD' && !targetStudentId) { showNotification("Veuillez sélectionner un élève cible."); return; }
-        if (type !== 'NEAR_BOARD' && studentId === targetStudentId) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
+        if (type !== 'NEAR_BOARD' && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
+        if (type !== 'NEAR_BOARD' && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
         
-        const newRule = { studentId, type };
-        if (type !== 'NEAR_BOARD') { newRule.targetStudentId = targetStudentId; }
+        const newRule = { studentId, type, targetStudentIds };
 
         if (editingIndex !== '') {
             state.rules[parseInt(editingIndex, 10)] = newRule;
@@ -1123,15 +1151,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const sinAngle = Math.sin(angleRad);
 
             for (let i = 0; i < desk.capacity; i++) {
-                // 1. Calculate un-rotated seat position relative to desk center
                 const relativeX = (desk.width * (2 * i + 1)) / (2 * desk.capacity) - (desk.width / 2);
-                const relativeY = 0; // Seats are on the horizontal centerline of the desk
-
-                // 2. Rotate this relative position
+                const relativeY = 0;
                 const rotatedRelativeX = relativeX * cosAngle - relativeY * sinAngle;
                 const rotatedRelativeY = relativeX * sinAngle + relativeY * cosAngle;
-
-                // 3. Calculate absolute world coordinates
                 const finalSeatCenterX = deskCenterX + rotatedRelativeX;
                 const finalSeatCenterY = deskCenterY + rotatedRelativeY;
 
@@ -1150,20 +1173,17 @@ document.addEventListener('DOMContentLoaded', () => {
         seatDistancesCache.clear();
         const boardCenter = getCenterOfStateObject(state.board);
         const allSeats = getAllSeatCoordinates();
-        
         allSeats.forEach(seat => {
             const distance = calculateDistance(seat.center, boardCenter);
             seatDistancesCache.set(seat.id, distance);
         });
-        
-        console.log("Distances au tableau recalculées avec rotation.");
+        console.log("Distances au tableau recalculées.");
         calculateAndStoreAllRuleScores();
     }
 
     function updateAllInterSeatDistances() {
         interSeatDistancesCache.clear();
         const allSeats = getAllSeatCoordinates();
-        
         for(let i = 0; i < allSeats.length; i++) {
             for(let j = i + 1; j < allSeats.length; j++) {
                 const seatA = allSeats[i];
@@ -1173,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 interSeatDistancesCache.set(key, distance);
             }
         }
-        console.log(`Matrice des distances entre places calculée avec rotation (${interSeatDistancesCache.size} paires).`);
+        console.log(`Matrice des distances entre places calculée (${interSeatDistancesCache.size} paires).`);
         calculateAndStoreAllRuleScores();
     }
     
@@ -1181,11 +1201,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ruleScores.clear();
         state.rules.forEach((rule, index) => {
             let score = 0;
-            
             let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
-            let targetIsPlaced = rule.targetStudentId ? getStudentSeatId(rule.targetStudentId, state.placements) !== null : true;
-
-            if (studentIsPlaced && targetIsPlaced) {
+            
+            if (studentIsPlaced) {
                 switch (rule.type) {
                     case 'NEAR_BOARD':
                         score = scoreNearBoardRule(rule, state.placements);
@@ -1240,71 +1258,82 @@ document.addEventListener('DOMContentLoaded', () => {
         if (maxDistance === minDistance) return 100;
 
         const studentSeatDistance = seatDistancesCache.get(studentSeatId);
-        if (studentSeatDistance === undefined) return 0; // Safety check
+        if (studentSeatDistance === undefined) return 0;
         const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
         return score;
     }
 
     function scoreMustBeNearRule(rule, placements) {
         const studentSeatId = getStudentSeatId(rule.studentId, placements);
-        const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
+        if (!studentSeatId) return 0;
+        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100;
 
-        if (!studentSeatId || !targetSeatId) return 0;
+        const individualScores = rule.targetStudentIds.map(targetId => {
+            const targetSeatId = getStudentSeatId(targetId, placements);
+            if (!targetSeatId) return 0;
 
-        const studentDeskId = studentSeatId.split('-')[0];
-        const targetDeskId = targetSeatId.split('-')[0];
-        if (studentDeskId === targetDeskId) return 100;
-        
-        const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
-        if (allOtherSeatIds.length === 0) return 100;
+            const studentDeskId = studentSeatId.split('-')[0];
+            const targetDeskId = targetSeatId.split('-')[0];
+            if (studentDeskId === targetDeskId) return 100;
+            
+            const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
+            if (allOtherSeatIds.length === 0) return 100;
 
-        let maxDistance = 0;
-        for (const otherSeatId of allOtherSeatIds) {
-            const key = [targetSeatId, otherSeatId].sort().join('--');
-            const distance = interSeatDistancesCache.get(key) || 0;
-            if (distance > maxDistance) {
-                maxDistance = distance;
+            let maxDistance = 0;
+            for (const otherSeatId of allOtherSeatIds) {
+                const key = [targetSeatId, otherSeatId].sort().join('--');
+                const distance = interSeatDistancesCache.get(key) || 0;
+                if (distance > maxDistance) {
+                    maxDistance = distance;
+                }
             }
-        }
+            if (maxDistance === 0) return 100;
 
-        if (maxDistance === 0) return 100;
-
-        const key = [studentSeatId, targetSeatId].sort().join('--');
-        const actualDistance = interSeatDistancesCache.get(key) || 0;
+            const key = [studentSeatId, targetSeatId].sort().join('--');
+            const actualDistance = interSeatDistancesCache.get(key) || 0;
+            
+            return 100 * (1 - (actualDistance / maxDistance));
+        });
         
-        const score = 100 * (1 - (actualDistance / maxDistance));
-        return score;
+        const totalScore = individualScores.reduce((sum, score) => sum + score, 0);
+        return totalScore / individualScores.length;
     }
     
     function scoreFarFromRule(rule, placements) {
         const studentSeatId = getStudentSeatId(rule.studentId, placements);
-        const targetSeatId = getStudentSeatId(rule.targetStudentId, placements);
+        if (!studentSeatId) return 0;
+        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100;
 
-        if (!studentSeatId || !targetSeatId) return 0;
-        
-        const studentDeskId = studentSeatId.split('-')[0];
-        const targetDeskId = targetSeatId.split('-')[0];
-        if (studentDeskId === targetDeskId) return 0;
-        
-        const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
-        if (allOtherSeatIds.length === 0) return 100;
+        const individualScores = rule.targetStudentIds.map(targetId => {
+            const targetSeatId = getStudentSeatId(targetId, placements);
+            if (!targetSeatId) return 0;
 
-        let maxDistance = 0;
-        for (const otherSeatId of allOtherSeatIds) {
-            const key = [targetSeatId, otherSeatId].sort().join('--');
-            const distance = interSeatDistancesCache.get(key) || 0;
-            if (distance > maxDistance) {
-                maxDistance = distance;
+            const studentDeskId = studentSeatId.split('-')[0];
+            const targetDeskId = targetSeatId.split('-')[0];
+            if (studentDeskId === targetDeskId) return 0;
+            
+            const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
+            if (allOtherSeatIds.length === 0) return 100;
+
+            let maxDistance = 0;
+            for (const otherSeatId of allOtherSeatIds) {
+                const key = [targetSeatId, otherSeatId].sort().join('--');
+                const distance = interSeatDistancesCache.get(key) || 0;
+                if (distance > maxDistance) {
+                    maxDistance = distance;
+                }
             }
-        }
 
-        if (maxDistance === 0) return 100;
+            if (maxDistance === 0) return 100;
 
-        const key = [studentSeatId, targetSeatId].sort().join('--');
-        const actualDistance = interSeatDistancesCache.get(key) || 0;
-        
-        const score = 100 * (actualDistance / maxDistance);
-        return score;
+            const key = [studentSeatId, targetSeatId].sort().join('--');
+            const actualDistance = interSeatDistancesCache.get(key) || 0;
+            
+            return 100 * (actualDistance / maxDistance);
+        });
+
+        const totalScore = individualScores.reduce((sum, score) => sum + score, 0);
+        return totalScore / individualScores.length;
     }
 
     function calculatePlacementScore(placements) {
@@ -1314,9 +1343,8 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const rule of state.rules) {
             let ruleScore = 0;
             let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
-            let targetIsPlaced = rule.targetStudentId ? getStudentSeatId(rule.targetStudentId, placements) !== null : true;
             
-            if (studentIsPlaced && targetIsPlaced) {
+            if (studentIsPlaced) {
                 switch (rule.type) {
                     case 'NEAR_BOARD':
                         ruleScore = scoreNearBoardRule(rule, placements);
@@ -1448,7 +1476,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const newState = JSON.parse(e.target.result);
+                const newState = migrateState(JSON.parse(e.target.result));
                 if (newState.students && newState.desks) {
                     state = newState;
                     saveState();
@@ -1470,14 +1498,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Tentative de lecture des données depuis le localStorage...");
         const savedState = localStorage.getItem('classroomPlanState');
         if (savedState) {
-            console.log("Données trouvées dans le localStorage, chargement:", JSON.parse(savedState));
-            state = JSON.parse(savedState);
+            console.log("Données trouvées dans le localStorage, chargement...");
+            state = migrateState(JSON.parse(savedState));
             if (!state.board) {
                  const caWidth = classroomArea.offsetWidth || 1024;
                  state.board = { x: caWidth / 2 - 100, y: 10, width: 200, height: 20 };
             }
             state.desks.forEach((desk, index) => {
-                if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; } // Backwards compatibility for old saves
+                if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; }
                 if (desk.rotation === undefined) { desk.rotation = 0; }
             });
         } else {
@@ -1486,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const harry = { id: crypto.randomUUID(), firstName: 'Harry', lastName: 'Potter' };
             state.students.push(hermione, harry);
 
-            state.rules.push({ studentId: hermione.id, type: 'NEAR_BOARD' });
+            state.rules.push({ studentId: hermione.id, type: 'NEAR_BOARD', targetStudentIds: [] });
             
             state.board = { x: 350, y: 20, width: 200, height: 20 };
             const deskWidth = 190;
@@ -1509,7 +1537,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStudentsInForms();
         updateAllDistances();
         
-        // Set default form values on load
         document.getElementById('rule-type').value = 'NEAR_BOARD';
         ruleTypeSelect.dispatchEvent(new Event('change'));
     }
@@ -1520,11 +1547,11 @@ document.addEventListener('DOMContentLoaded', () => {
         zoomDisplay.textContent = `${Math.round(zoomLevel * 100)}%`;
     }
     zoomInBtn.addEventListener('click', () => {
-        zoomLevel = Math.min(2, zoomLevel + 0.1); // Max zoom 200%
+        zoomLevel = Math.min(2, zoomLevel + 0.1);
         updateZoom();
     });
     zoomOutBtn.addEventListener('click', () => {
-        zoomLevel = Math.max(0.25, zoomLevel - 0.1); // Min zoom 25%
+        zoomLevel = Math.max(0.25, zoomLevel - 0.1);
         updateZoom();
     });
     zoomResetBtn.addEventListener('click', () => {
