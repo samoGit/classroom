@@ -1,3 +1,4 @@
+
 <!-- Last Update: 2025-09-22 03:05 - Fix missing resize and move handler functions (v0.15.1). -->
 <!-- Last Update: 2025-09-22 03:02 - Implement desk rotation with accurate score recalculation (v0.15.0). -->
 <!-- Last Update: 2025-09-22 02:43 - Improved intelligent naming for desk duplication (v0.14.0). -->
@@ -142,6 +143,18 @@
             border-radius: 9999px;
             color: white;
             margin-left: 8px;
+        }
+        .desk-selected {
+            outline: 2px solid #3b82f6; /* blue-500 */
+            outline-offset: 2px;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+        .selection-rectangle {
+            position: absolute;
+            border: 1px solid #3b82f6;
+            background-color: rgba(59, 130, 246, 0.2);
+            z-index: 100;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -346,6 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let interSeatDistancesCache = new Map();
     let ruleScores = new Map();
     let zoomLevel = 1.0;
+    let selectedDeskIds = new Set();
     
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
@@ -449,6 +463,11 @@ document.addEventListener('DOMContentLoaded', () => {
             deskEl.style.height = `${desk.height}px`;
             deskEl.style.transform = `rotate(${desk.rotation || 0}deg)`;
             deskEl.style.cursor = 'move';
+
+            if (selectedDeskIds.has(desk.id)) {
+                deskEl.classList.add('desk-selected');
+            }
+
             deskEl.addEventListener('mousedown', handleDeskMoveStart);
             deskEl.addEventListener('dblclick', () => openDeskSettings(desk.id));
 
@@ -471,6 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showConfirmation(`Voulez-vous vraiment supprimer le bureau "${desk.name || 'sans nom'}" ?`, () => {
                     state.desks = state.desks.filter(d => d.id !== desk.id);
                     delete state.placements[desk.id];
+                    selectedDeskIds.delete(desk.id);
                     saveState();
                     render();
                     updateAllDistances();
@@ -634,7 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const studentSelect = document.getElementById('rule-student');
         const targetStudentSelect = document.getElementById('rule-target-student');
         studentSelect.innerHTML = '<option value="">-- Choisir un élève --</option>';
-        targetStudentSelect.innerHTML = '<option value="">-- Choisir un élève --</option>';
+        targetStudentSelect.innerHTML = '';
         state.students.forEach(s => {
             studentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
             targetStudentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
@@ -856,29 +876,68 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Element Moving/Resizing ---
+    function updateSelectionVisuals() {
+        document.querySelectorAll('.desk-container').forEach(el => {
+            el.classList.toggle('desk-selected', selectedDeskIds.has(el.id));
+        });
+    }
+
     function handleDeskMoveStart(e) {
         if(e.target.closest('.action-btn') || e.target.classList.contains('desk-resize-handle') || e.target.closest('[data-student-id]')) return;
+
+        const clickedDeskEl = e.currentTarget;
+        const clickedDeskId = clickedDeskEl.id;
+
+        // --- Selection Logic ---
+        if (e.ctrlKey) {
+            if (selectedDeskIds.has(clickedDeskId)) {
+                selectedDeskIds.delete(clickedDeskId);
+            } else {
+                selectedDeskIds.add(clickedDeskId);
+            }
+        } else {
+            if (!selectedDeskIds.has(clickedDeskId)) {
+                selectedDeskIds.clear();
+                selectedDeskIds.add(clickedDeskId);
+            }
+        }
+        updateSelectionVisuals();
         e.preventDefault();
-        const deskEl = e.currentTarget;
-        const desk = findDesk(deskEl.id);
+        
+        // --- Dragging Logic ---
         const startX = e.clientX;
         const startY = e.clientY;
-        const initialX = desk.x;
-        const initialY = desk.y;
-        function onMouseMove(e) {
-            const dx = (e.clientX - startX) / zoomLevel;
-            const dy = (e.clientY - startY) / zoomLevel;
-            desk.x = initialX + dx;
-            desk.y = initialY + dy;
-            deskEl.style.left = `${desk.x}px`;
-            deskEl.style.top = `${desk.y}px`;
+        
+        const dragTargets = [];
+        selectedDeskIds.forEach(deskId => {
+            const desk = findDesk(deskId);
+            const deskEl = document.getElementById(deskId);
+            if (desk && deskEl) {
+                dragTargets.push({ desk, deskEl, initialX: desk.x, initialY: desk.y });
+            }
+        });
+
+        if (dragTargets.length === 0) return;
+
+        function onMouseMove(moveEvent) {
+            const dx = (moveEvent.clientX - startX) / zoomLevel;
+            const dy = (moveEvent.clientY - startY) / zoomLevel;
+            
+            dragTargets.forEach(target => {
+                target.desk.x = target.initialX + dx;
+                target.desk.y = target.initialY + dy;
+                target.deskEl.style.left = `${target.desk.x}px`;
+                target.deskEl.style.top = `${target.desk.y}px`;
+            });
         }
+
         function onMouseUp() {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
             updateAllDistances();
             saveState();
         }
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     }
@@ -1495,6 +1554,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     function init() {
+        classroomArea.addEventListener('mousedown', e => {
+            // If we click on an element that is NOT the background, let the specific handlers (like desk move) take care of it.
+            if (e.target !== classroomArea && e.target !== classroomContent) {
+                // This part handles deselecting if clicking on the background without starting a drag
+                if (!e.target.closest('.desk-container')) {
+                    if (selectedDeskIds.size > 0) {
+                        selectedDeskIds.clear();
+                        updateSelectionVisuals();
+                    }
+                }
+                return;
+            }
+            
+            // If ctrl is pressed, don't start selection rectangle, allow deselecting
+            if(e.ctrlKey) return;
+            
+            e.preventDefault();
+
+            const rect = classroomContent.getBoundingClientRect();
+            const startX = (e.clientX - rect.left) / zoomLevel;
+            const startY = (e.clientY - rect.top) / zoomLevel;
+
+            const selectionRectEl = document.createElement('div');
+            selectionRectEl.className = 'selection-rectangle';
+            classroomContent.appendChild(selectionRectEl);
+
+            function onMouseMove(moveEvent) {
+                const currentX = (moveEvent.clientX - rect.left) / zoomLevel;
+                const currentY = (moveEvent.clientY - rect.top) / zoomLevel;
+                
+                const x = Math.min(startX, currentX);
+                const y = Math.min(startY, currentY);
+                const width = Math.abs(startX - currentX);
+                const height = Math.abs(startY - currentY);
+
+                selectionRectEl.style.left = `${x}px`;
+                selectionRectEl.style.top = `${y}px`;
+                selectionRectEl.style.width = `${width}px`;
+                selectionRectEl.style.height = `${height}px`;
+
+                const selectionRect = { x1: x, y1: y, x2: x + width, y2: y + height };
+
+                selectedDeskIds.clear(); // Clear selection at the beginning of each move
+                state.desks.forEach(desk => {
+                    // This is a simple Axis-Aligned Bounding Box (AABB) collision check.
+                    // It does not account for desk rotation. For rotated desks, this will check against
+                    // the desk's un-rotated bounding box.
+                    const deskRect = {
+                        x1: desk.x,
+                        y1: desk.y,
+                        x2: desk.x + desk.width,
+                        y2: desk.y + desk.height
+                    };
+
+                    if (selectionRect.x1 < deskRect.x2 &&
+                        selectionRect.x2 > deskRect.x1 &&
+                        selectionRect.y1 < deskRect.y2 &&
+                        selectionRect.y2 > deskRect.y1)
+                    {
+                        selectedDeskIds.add(desk.id);
+                    }
+                });
+                updateSelectionVisuals();
+            }
+
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                if (selectionRectEl) {
+                    selectionRectEl.remove();
+                }
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
         console.log("Tentative de lecture des données depuis le localStorage...");
         const savedState = localStorage.getItem('classroomPlanState');
         if (savedState) {
@@ -1565,4 +1701,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
-
