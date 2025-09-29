@@ -155,49 +155,67 @@
             z-index: 100;
             pointer-events: none;
         }
+        #sidebar-wrapper.collapsed {
+            width: 0 !important;
+            max-width: 0 !important;
+        }
+        #sidebar-wrapper.collapsed #sidebar {
+            padding-left: 0;
+            padding-right: 0;
+            visibility: hidden;
+            overflow: hidden;
+        }
+        #sidebar-wrapper.collapsed #toggle-sidebar-icon {
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex flex-col md:flex-row h-screen overflow-hidden">
 
     <!-- Control Panel (Left Column) -->
-    <aside class="w-full md:w-1/3 md:max-w-sm h-auto md:h-screen bg-white shadow-lg flex flex-col p-4 overflow-y-auto flex-shrink-0">
-        <!-- Placement Rules -->
-        <div class="space-y-4 flex-grow flex flex-col">
-            <div>
-                <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Ajouter / Modifier une Règle</h3>
-                <form id="add-rule-form" class="space-y-2 text-sm">
-                    <input type="hidden" id="editing-rule-index">
-                    <div>
-                        <label for="rule-student" class="block font-medium">Élève concerné :</label>
-                        <select id="rule-student" class="w-full border rounded-md p-1 mt-1"></select>
+    <div id="sidebar-wrapper" class="relative w-full md:w-1/3 md:max-w-sm h-auto md:h-screen flex-shrink-0 transition-all duration-300 ease-in-out">
+        <aside id="sidebar" class="w-full h-full bg-white shadow-lg flex flex-col p-4 overflow-y-auto">
+            <!-- Placement Rules -->
+            <div class="space-y-4 flex-grow flex flex-col min-w-[300px]">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Ajouter / Modifier une Règle</h3>
+                    <form id="add-rule-form" class="space-y-2 text-sm">
+                        <input type="hidden" id="editing-rule-index">
+                        <div>
+                            <label for="rule-student" class="block font-medium">Élève concerné :</label>
+                            <select id="rule-student" class="w-full border rounded-md p-1 mt-1"></select>
+                        </div>
+                        <div>
+                            <label for="rule-type" class="block font-medium">Règle :</label>
+                            <select id="rule-type" class="w-full border rounded-md p-1 mt-1">
+                                <option value="MUST_BE_NEAR">Doit être proche de</option>
+                                <option value="FAR_FROM">Doit être éloigné de</option>
+                                <option value="NEAR_BOARD">Doit être proche du tableau</option>
+                                <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
+                            </select>
+                        </div>
+                        <div id="rule-target-container">
+                            <label for="rule-target-student" class="block font-medium">Élève(s) cible(s) :</label>
+                            <select id="rule-target-student" class="w-full border rounded-md p-1 mt-1 h-24" multiple></select>
+                        </div>
+                        <div id="rule-form-buttons" class="flex space-x-2 pt-1">
+                            <button type="submit" id="rule-submit-btn" class="w-full bg-green-500 text-white py-1.5 rounded-md hover:bg-green-600">Ajouter Règle</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="flex-grow flex flex-col">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Règles Actives</h3>
+                    <div id="rules-list" class="space-y-1 text-sm overflow-y-auto flex-grow">
+                        <!-- Rules will be injected here -->
                     </div>
-                    <div>
-                        <label for="rule-type" class="block font-medium">Règle :</label>
-                        <select id="rule-type" class="w-full border rounded-md p-1 mt-1">
-                            <option value="MUST_BE_NEAR">Doit être proche de</option>
-                            <option value="FAR_FROM">Doit être éloigné de</option>
-                            <option value="NEAR_BOARD">Doit être proche du tableau</option>
-                            <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
-                        </select>
-                    </div>
-                    <div id="rule-target-container">
-                        <label for="rule-target-student" class="block font-medium">Élève(s) cible(s) :</label>
-                        <select id="rule-target-student" class="w-full border rounded-md p-1 mt-1 h-24" multiple></select>
-                    </div>
-                    <div id="rule-form-buttons" class="flex space-x-2 pt-1">
-                        <button type="submit" id="rule-submit-btn" class="w-full bg-green-500 text-white py-1.5 rounded-md hover:bg-green-600">Ajouter Règle</button>
-                    </div>
-                </form>
-            </div>
-            <div class="flex-grow flex flex-col">
-                <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Règles Actives</h3>
-                <div id="rules-list" class="space-y-1 text-sm overflow-y-auto flex-grow">
-                    <!-- Rules will be injected here -->
                 </div>
             </div>
-        </div>
-         <div class="text-xs text-gray-400 mt-4 text-left">Version <span id="version-display">0.15.1</span></div>
-    </aside>
+             <div class="text-xs text-gray-400 mt-4 text-left min-w-[300px]">Version <span id="version-display">0.15.1</span></div>
+        </aside>
+        <button id="toggle-sidebar-btn" class="hidden md:flex absolute top-1/2 -right-3 z-20 transform -translate-y-1/2 bg-white rounded-full w-6 h-6 items-center justify-center shadow-md border border-gray-200 hover:bg-gray-100 focus:outline-none">
+            <svg id="toggle-sidebar-icon" class="w-4 h-4 text-gray-600 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        </button>
+    </div>
 
     <!-- Classroom Area (Main Content) -->
     <main class="flex-grow h-full p-4 flex flex-col overflow-hidden">
@@ -371,6 +389,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const classroomContent = document.getElementById('classroom-content');
     const rulesList = document.getElementById('rules-list');
     const placementScoreDisplay = document.getElementById('placement-score-display');
+    const sidebarWrapper = document.getElementById('sidebar-wrapper');
+    const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 
     // Modals
     const studentModal = document.getElementById('student-modal');
@@ -1788,6 +1808,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     function init() {
+        if (toggleSidebarBtn) {
+            toggleSidebarBtn.addEventListener('click', () => {
+                sidebarWrapper.classList.toggle('collapsed');
+            });
+        }
         classroomArea.addEventListener('mousedown', e => {
             // If we click on an element that is NOT the background, let the specific handlers (like desk move) take care of it.
             if (e.target !== classroomArea && e.target !== classroomContent) {
