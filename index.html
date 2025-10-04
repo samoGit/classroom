@@ -192,6 +192,7 @@
                                 <option value="FAR_FROM">Doit être éloigné de</option>
                                 <option value="NEAR_BOARD">Doit être proche du tableau</option>
                                 <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
+                                <option value="ISOLATED">Doit être isolé</option>
                             </select>
                         </div>
                         <div id="rule-target-container">
@@ -282,6 +283,9 @@
                         </li>
                         <li>
                             <strong>Doit être proche de mon bureau :</strong> Le score est calculé en fonction de la distance directe entre la place de l'élève et le bureau du professeur. Un élève sur la place la plus proche obtient 100%, le plus éloigné 0%.
+                        </li>
+                        <li>
+                            <strong>Doit être isolé :</strong> Le score est de <strong>0%</strong> si l'élève partage son bureau. S'il est seul, le score est de 100% si son voisin le plus proche est le plus loin possible, et diminue à mesure que son voisin se rapproche.
                         </li>
                         <li>
                             <strong>Doit être proche de / éloigné de :</strong> Si une règle concerne plusieurs élèves cibles, le score est la <strong>moyenne des scores</strong> calculés pour chaque élève cible individuellement.
@@ -706,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
                 case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
                 case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
+                case 'ISOLATED': ruleText = `<b>${studentName}</b> doit être isolé`; break;
             }
             
             const score = ruleScores.get(index);
@@ -1358,8 +1363,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
 
         if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
+        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
+        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
         
         const newRule = { studentId, type, targetStudentIds };
 
@@ -1377,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ruleTypeSelect.addEventListener('change', () => {
         const type = ruleTypeSelect.value;
-        const hideTarget = type === 'NEAR_BOARD' || type === 'NEAR_TEACHER_DESK';
+        const hideTarget = ['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type);
         ruleTargetContainer.style.display = hideTarget ? 'none' : 'block';
     });
     
@@ -1501,6 +1506,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     case 'NEAR_TEACHER_DESK':
                         score = scoreNearTeacherDeskRule(rule, state.placements);
                         break;
+                    case 'ISOLATED':
+                        score = scoreIsolateRule(rule, state.placements);
+                        break;
                     case 'MUST_BE_NEAR':
                         score = scoreMustBeNearRule(rule, state.placements);
                         break;
@@ -1570,6 +1578,42 @@ document.addEventListener('DOMContentLoaded', () => {
         const studentSeatDistance = teacherDeskDistancesCache.get(studentSeatId);
         if (studentSeatDistance === undefined) return 0;
         const score = 100 * (1 - ((studentSeatDistance - minDistance) / (maxDistance - minDistance)));
+        return score;
+    }
+
+    function scoreIsolateRule(rule, placements) {
+        const studentId = rule.studentId;
+        const studentSeatId = getStudentSeatId(studentId, placements);
+        if (!studentSeatId) return 0;
+
+        const [studentDeskId] = studentSeatId.split('-');
+        const deskPlacement = placements[studentDeskId] || [];
+        const isSharingDesk = deskPlacement.some(id => id !== null && id !== studentId);
+
+        if (isSharingDesk) return 0;
+
+        const allPlacedStudents = Object.values(placements).flat().filter(id => id !== null && id !== studentId);
+        if (allPlacedStudents.length === 0) return 100;
+
+        let minDistanceToNeighbor = Infinity;
+        allPlacedStudents.forEach(otherStudentId => {
+            const otherSeatId = getStudentSeatId(otherStudentId, placements);
+            if (otherSeatId) {
+                const key = [studentSeatId, otherSeatId].sort().join('--');
+                const distance = interSeatDistancesCache.get(key);
+                if (distance !== undefined && distance < minDistanceToNeighbor) {
+                    minDistanceToNeighbor = distance;
+                }
+            }
+        });
+        
+        if (minDistanceToNeighbor === Infinity) return 100;
+
+        const allInterSeatDistances = Array.from(interSeatDistancesCache.values());
+        const maxDistance = allInterSeatDistances.length > 0 ? Math.max(...allInterSeatDistances) : 0;
+        if (maxDistance === 0) return 100;
+
+        const score = 100 * (minDistanceToNeighbor / maxDistance);
         return score;
     }
 
@@ -1661,6 +1705,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         break;
                     case 'NEAR_TEACHER_DESK':
                         ruleScore = scoreNearTeacherDeskRule(rule, placements);
+                        break;
+                    case 'ISOLATED':
+                        ruleScore = scoreIsolateRule(rule, placements);
                         break;
                     case 'MUST_BE_NEAR':
                         ruleScore = scoreMustBeNearRule(rule, placements);
