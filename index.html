@@ -168,6 +168,37 @@
         #sidebar-wrapper.collapsed #toggle-sidebar-icon {
             transform: rotate(180deg);
         }
+        #toggle-gender-colors:checked + label {
+            background-color: #3b82f6; /* blue-500 */
+        }
+        #toggle-gender-colors:checked + label .toggle-dot {
+            transform: translateX(1.5rem); /* Move the dot to the right */
+        }
+        input[type="color"] {
+          -webkit-appearance: none;
+          border: none;
+          width: 40px;
+          height: 40px;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+          padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+          border: 1px solid #ccc;
+          border-radius: 4px;
+        }
+        .student-selected {
+            outline: 3px solid #2563eb; /* blue-600 */
+            outline-offset: 2px;
+            box-shadow: 0 0 12px rgba(37, 99, 235, 0.6);
+            z-index: 20;
+        }
+        .student-neighbor {
+            outline: 2px solid #93c5fd; /* blue-300 */
+            outline-offset: 1px;
+            box-shadow: 0 0 8px rgba(147, 197, 253, 0.5);
+            z-index: 19;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex flex-col md:flex-row h-screen overflow-hidden">
@@ -181,7 +212,7 @@
                     <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Ajouter / Modifier une Règle</h3>
                     <form id="add-rule-form" class="space-y-2 text-sm">
                         <input type="hidden" id="editing-rule-index">
-                        <div>
+                        <div id="rule-student-container">
                             <label for="rule-student" class="block font-medium">Élève concerné :</label>
                             <select id="rule-student" class="w-full border rounded-md p-1 mt-1"></select>
                         </div>
@@ -193,6 +224,7 @@
                                 <option value="NEAR_BOARD">Doit être proche du tableau</option>
                                 <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
                                 <option value="ISOLATED">Doit être isolé</option>
+                                <option value="MIX_GENDERS">Mélanger les Filles et les Garçons</option>
                             </select>
                         </div>
                         <div id="rule-target-container">
@@ -226,6 +258,13 @@
                 <button id="add-desk-btn" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Bureau</button>
                 <button id="add-desk-double-btn" class="text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ajouter Bureau Double</button>
                 <button id="auto-place-btn" class="text-sm bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Placement Auto</button>
+                <div class="flex items-center space-x-2 bg-gray-200 rounded-full p-1">
+                    <label for="toggle-gender-colors" class="text-sm font-medium text-gray-700 cursor-pointer pr-2 pl-2">Couleurs par genre</label>
+                    <input type="checkbox" id="toggle-gender-colors" class="hidden">
+                    <label for="toggle-gender-colors" class="cursor-pointer relative w-12 h-6 bg-gray-300 rounded-full transition duration-300 ease-in-out">
+                        <div class="toggle-dot absolute w-5 h-5 bg-white rounded-full shadow-md top-0.5 left-0.5 transform transition-transform duration-300 ease-in-out"></div>
+                    </label>
+                </div>
             </div>
             
             <div class="flex items-center space-x-2 flex-shrink-0 my-2 md:my-0">
@@ -236,6 +275,7 @@
             <div class="flex flex-wrap justify-center gap-2">
                 <button id="export-btn" class="text-sm bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Enregistrer</button>
                 <button id="import-btn" class="text-sm bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Ouvrir</button>
+                <button id="customization-btn" class="text-sm bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">Personnalisation</button>
                 <input type="file" id="import-file-input" class="hidden" accept=".json">
              </div>
         </div>
@@ -249,7 +289,7 @@
                  <button id="zoom-in-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">+</button>
                  <button id="zoom-reset-btn" class="w-8 h-8 rounded-md hover:bg-gray-200">
                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
-                           <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
+                          <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
                      </svg>
                  </button>
             </div>
@@ -288,6 +328,9 @@
                             <strong>Doit être isolé :</strong> Le score est de <strong>0%</strong> si l'élève partage son bureau. S'il est seul, le score est de 100% si son voisin le plus proche est le plus loin possible, et diminue à mesure que son voisin se rapproche.
                         </li>
                         <li>
+                            <strong>Mélanger les Filles et les Garçons :</strong> Le score compare la distance moyenne entre élèves de même genre à la distance moyenne entre élèves de genres différents. Un score de 100% indique un mélange parfait. Un score faible indique que les élèves de même genre sont regroupés.
+                        </li>
+                        <li>
                             <strong>Doit être proche de / éloigné de :</strong> Si une règle concerne plusieurs élèves cibles, le score est la <strong>moyenne des scores</strong> calculés pour chaque élève cible individuellement.
                         </li>
                         <li>
@@ -296,7 +339,7 @@
                         <li>
                             <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Une paire d'élèves aux deux places les plus éloignées possible obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
                         </li>
-                          <li>
+                         <li>
                             <strong>Élève non placé :</strong> Si l'élève concerné par une règle n'est pas placé, la règle obtient <strong>0%</strong>. Si un des élèves cibles n'est pas placé, seule la partie de la règle le concernant obtient 0%, ce qui est ensuite moyenné avec les autres.
                         </li>
                     </ul>
@@ -318,6 +361,15 @@
                 <div class="mb-4">
                     <label for="student-lastName" class="block text-sm font-medium text-gray-700">Nom</label>
                     <input type="text" id="student-lastName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                </div>
+                <div class="mb-4">
+                    <label for="student-gender" class="block text-sm font-medium text-gray-700">Genre</label>
+                    <select id="student-gender" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
+                        <option value=""></option>
+                        <option value="Fille">Fille</option>
+                        <option value="Garçon">Garçon</option>
+                        <option value="Autre">Autre</option>
+                    </select>
                 </div>
                 <div class="flex justify-end space-x-2">
                     <button type="button" id="cancel-student-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Annuler</button>
@@ -366,6 +418,52 @@
             </div>
         </div>
     </div>
+    
+    <!-- Customization Modal -->
+    <div id="customization-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Personnalisation</h2>
+                <button id="close-customization-modal-btn" class="text-2xl text-gray-500 hover:text-gray-800">&times;</button>
+            </div>
+            <form id="customization-form">
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Voisinage</h3>
+                        <div class="flex items-center justify-between mt-4">
+                            <label for="neighbor-count" class="block text-sm font-medium text-gray-700">Nombre de voisins à afficher</label>
+                            <input type="number" id="neighbor-count" class="w-20 border border-gray-300 rounded-md shadow-sm py-1 px-2 text-center">
+                        </div>
+                    </div>
+                    <div>
+                         <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Couleurs par genre</h3>
+                        <div class="space-y-3 mt-4">
+                            <div class="flex items-center justify-between">
+                                <label for="color-boy" class="block text-sm font-medium text-gray-700">Garçon</label>
+                                <input type="color" id="color-boy" class="w-10 h-10 border-none cursor-pointer rounded-md">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <label for="color-girl" class="block text-sm font-medium text-gray-700">Fille</label>
+                                <input type="color" id="color-girl" class="w-10 h-10 border-none cursor-pointer rounded-md">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <label for="color-other" class="block text-sm font-medium text-gray-700">Autre</label>
+                                <input type="color" id="color-other" class="w-10 h-10 border-none cursor-pointer rounded-md">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <label for="color-unspecified" class="block text-sm font-medium text-gray-700">Non spécifié</label>
+                                <input type="color" id="color-unspecified" class="w-10 h-10 border-none cursor-pointer rounded-md">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" id="reset-colors-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Réinitialiser</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Sauvegarder</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
 
 <script>
@@ -380,6 +478,16 @@ document.addEventListener('DOMContentLoaded', () => {
         placements: {}, // { deskId: [studentId1, studentId2 | null] }
         rules: [],
         lockedStudents: [], // [studentId1, studentId2]
+        settings: {
+            showGenderColors: true,
+            genderColors: {
+                'Garçon': '#3b82f6',
+                'Fille': '#ef4444',
+                'Autre': '#eab308',
+                '': '#fde047'
+            },
+            numberOfNeighbors: 4
+        }
     };
     let seatDistancesCache = new Map();
     let teacherDeskDistancesCache = new Map();
@@ -387,6 +495,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let ruleScores = new Map();
     let zoomLevel = 1.0;
     let selectedDeskIds = new Set();
+    let selectedStudentId = null;
+    let neighborCache = new Map();
     
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
@@ -403,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const deskSettingsForm = document.getElementById('desk-settings-form');
     const confirmationModal = document.getElementById('confirmation-modal');
     const helpModal = document.getElementById('help-modal');
+    const customizationModal = document.getElementById('customization-modal');
     
     // Buttons
     const addStudentActionBtn = document.getElementById('add-student-action-btn');
@@ -419,11 +530,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const zoomOutBtn = document.getElementById('zoom-out-btn');
     const zoomResetBtn = document.getElementById('zoom-reset-btn');
     const zoomDisplay = document.getElementById('zoom-display');
+    const customizationBtn = document.getElementById('customization-btn');
+    const closeCustomizationModalBtn = document.getElementById('close-customization-modal-btn');
+    const resetColorsBtn = document.getElementById('reset-colors-btn');
+    const toggleGenderColors = document.getElementById('toggle-gender-colors');
     
     // Forms
     const addRuleForm = document.getElementById('add-rule-form');
     const ruleTypeSelect = document.getElementById('rule-type');
+    const ruleStudentContainer = document.getElementById('rule-student-container');
     const ruleTargetContainer = document.getElementById('rule-target-container');
+    const customizationForm = document.getElementById('customization-form');
 
     // --- DATA PERSISTENCE ---
     function saveState() {
@@ -467,7 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         saveState();
         render();
         updateStudentsInForms();
-        calculateAndStoreAllRuleScores();
+        updateAllDistances();
     }
     
     // --- RENDER FUNCTIONS ---
@@ -479,9 +596,26 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateStudentsInForms() {
         renderRuleForm();
     }
+    
+    function getTextColorForBg(bgColor) {
+        if (!bgColor) return '#1f2937'; // default dark text
+        try {
+            const r = parseInt(bgColor.substr(1, 2), 16);
+            const g = parseInt(bgColor.substr(3, 2), 16);
+            const b = parseInt(bgColor.substr(5, 2), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness > 125 ? '#1f2937' : 'white';
+        } catch (e) {
+            return '#1f2937';
+        }
+    }
+
 
     function renderClassroom() {
         classroomContent.innerHTML = '';
+        const neighbors = selectedStudentId ? neighborCache.get(selectedStudentId) || [] : [];
+
+        // Render student desks
         state.desks.forEach(desk => {
             const deskEl = document.createElement('div');
             deskEl.id = desk.id;
@@ -555,23 +689,33 @@ document.addEventListener('DOMContentLoaded', () => {
             seatsContainer.className = `w-full h-full flex items-center justify-around flex-grow ${marginTopClass}`;
             for (let i = 0; i < desk.capacity; i++) {
                 const seatEl = document.createElement('div');
-                seatEl.className = 'w-full h-full bg-yellow-700 rounded-md m-1 flex items-center justify-center text-white text-xs font-semibold drop-zone relative';
+                seatEl.className = 'w-full h-full rounded-md m-1 flex items-center justify-center text-xs font-semibold drop-zone relative student-container';
                 seatEl.dataset.deskId = desk.id;
                 seatEl.dataset.seatIndex = i;
                 seatEl.addEventListener('dragover', handleDragOver);
                 seatEl.addEventListener('dragleave', handleDragLeave);
                 seatEl.addEventListener('drop', handleDrop);
                 const placedStudentId = state.placements[desk.id] ? state.placements[desk.id][i] : null;
+
                 if (placedStudentId) {
                     const student = findStudent(placedStudentId);
-                    seatEl.classList.add('student-container');
+                    seatEl.dataset.studentId = placedStudentId;
                     seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
                     seatEl.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(placedStudentId); });
                     seatEl.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(placedStudentId)} ?`, () => { deleteStudent(placedStudentId); }); });
-                    seatEl.classList.remove('bg-yellow-700');
-                    seatEl.classList.add('bg-green-600', 'cursor-grab');
+                    
+                    seatEl.classList.add('cursor-grab');
+                    if (state.settings.showGenderColors) {
+                        const gender = student.gender || '';
+                        const bgColor = state.settings.genderColors[gender];
+                        seatEl.style.backgroundColor = bgColor;
+                        seatEl.style.color = getTextColorForBg(bgColor);
+                    } else {
+                        seatEl.style.backgroundColor = '#16a34a'; // green-600
+                        seatEl.style.color = 'white';
+                    }
+
                     seatEl.draggable = true;
-                    seatEl.dataset.studentId = placedStudentId;
                     seatEl.addEventListener('dragstart', handleDragStart);
                     const lockBtn = document.createElement('button');
                     lockBtn.className = 'seat-lock-icon';
@@ -585,14 +729,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleStudentLock(placedStudentId); });
                     seatEl.appendChild(lockBtn);
+
+                    if (placedStudentId === selectedStudentId) seatEl.classList.add('student-selected');
+                    if (neighbors.includes(placedStudentId)) seatEl.classList.add('student-neighbor');
                 } else {
                     seatEl.textContent = 'Libre';
+                    seatEl.style.backgroundColor = '#9a3412'; // yellow-800
+                    seatEl.style.color = 'white';
                 }
                 seatsContainer.appendChild(seatEl);
             }
             deskEl.appendChild(seatsContainer);
             classroomContent.appendChild(deskEl);
         });
+
         if (state.board) {
             const boardEl = document.createElement('div');
             boardEl.id = 'board';
@@ -612,6 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             classroomContent.appendChild(boardEl);
         }
+
         if (state.teacherDesk) {
             const td = state.teacherDesk;
             const deskEl = document.createElement('div');
@@ -653,6 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             classroomContent.appendChild(deskEl);
         }
+
         const placedStudentIds = Object.values(state.placements).flat().filter(id => id);
         const unplacedStudents = state.students.filter(s => !placedStudentIds.includes(s.id));
         const boardBottom = state.board ? state.board.y + state.board.height : 20;
@@ -672,11 +824,24 @@ document.addEventListener('DOMContentLoaded', () => {
             studentChip.id = `unplaced-${student.id}`;
             studentChip.dataset.studentId = student.id;
             studentChip.draggable = true;
-            studentChip.className = 'absolute p-1 px-2 bg-blue-200 text-blue-800 rounded-full text-sm cursor-grab flex items-center justify-center shadow student-container';
+            studentChip.className = 'absolute p-1 px-2 rounded-full text-sm cursor-grab flex items-center justify-center shadow student-container';
             studentChip.style.left = `${currentX}px`;
             studentChip.style.top = `${currentY}px`;
             studentChip.style.width = `${chipWidth}px`;
             studentChip.style.height = `${chipHeight}px`;
+            
+            if (state.settings.showGenderColors) {
+                const gender = student.gender || '';
+                const bgColor = state.settings.genderColors[gender];
+                studentChip.style.backgroundColor = bgColor;
+                studentChip.style.color = getTextColorForBg(bgColor);
+            } else {
+                studentChip.classList.add('bg-blue-200', 'text-blue-800');
+            }
+
+            if (student.id === selectedStudentId) studentChip.classList.add('student-selected');
+            if (neighbors.includes(student.id)) studentChip.classList.add('student-neighbor');
+            
             studentChip.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
             studentChip.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(student.id); });
             studentChip.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(student.id)} ?`, () => { deleteStudent(student.id); }); });
@@ -699,18 +864,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const ruleDiv = document.createElement('div');
             ruleDiv.className = 'flex justify-between items-center p-2 bg-white rounded-md relative rule-container';
             let ruleText = '';
-            const studentName = getStudentFullName(rule.studentId);
-            let targetText = '';
-            if (rule.targetStudentIds && rule.targetStudentIds.length > 0) {
-                 targetText = `<b>${rule.targetStudentIds.map(getStudentFullName).join(', ')}</b>`;
-            }
+            
+            if (rule.type === 'MIX_GENDERS') {
+                ruleText = 'Mélanger les Filles et les Garçons';
+            } else {
+                const studentName = getStudentFullName(rule.studentId);
+                let targetText = '';
+                if (rule.targetStudentIds && rule.targetStudentIds.length > 0) {
+                     targetText = `<b>${rule.targetStudentIds.map(getStudentFullName).join(', ')}</b>`;
+                }
 
-            switch (rule.type) {
-                case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
-                case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
-                case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
-                case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
-                case 'ISOLATED': ruleText = `<b>${studentName}</b> doit être isolé`; break;
+                switch (rule.type) {
+                    case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
+                    case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
+                    case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
+                    case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
+                    case 'ISOLATED': ruleText = `<b>${studentName}</b> doit être isolé`; break;
+                }
             }
             
             const score = ruleScores.get(index);
@@ -751,6 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('student-id').value = student.id;
             document.getElementById('student-firstName').value = student.firstName;
             document.getElementById('student-lastName').value = student.lastName;
+            document.getElementById('student-gender').value = student.gender || '';
         } else {
             document.getElementById('modal-title').textContent = 'Ajouter un Élève';
         }
@@ -764,7 +935,11 @@ document.addEventListener('DOMContentLoaded', () => {
     studentForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const id = document.getElementById('student-id').value;
-        const studentData = { firstName: document.getElementById('student-firstName').value, lastName: document.getElementById('student-lastName').value, };
+        const studentData = { 
+            firstName: document.getElementById('student-firstName').value, 
+            lastName: document.getElementById('student-lastName').value,
+            gender: document.getElementById('student-gender').value,
+        };
         let newStudentId;
         if (id) {
             const student = findStudent(id);
@@ -945,6 +1120,9 @@ document.addEventListener('DOMContentLoaded', () => {
         state.placements[targetDeskId][targetSeatIndex] = draggedStudentId;
         draggedStudentId = null;
         document.querySelector('.dragging')?.classList.remove('dragging');
+        
+        updateNeighborCache();
+        
         saveState();
         render();
         calculateAndStoreAllRuleScores();
@@ -966,6 +1144,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         draggedStudentId = null;
         document.querySelector('.dragging')?.classList.remove('dragging');
+        
+        updateNeighborCache();
+        
         saveState();
         render();
         calculateAndStoreAllRuleScores();
@@ -1326,7 +1507,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function openRuleEditor(ruleIndex) {
         const rule = state.rules[ruleIndex];
         document.getElementById('editing-rule-index').value = ruleIndex;
-        document.getElementById('rule-student').value = rule.studentId;
+        document.getElementById('rule-student').value = rule.studentId || '';
         document.getElementById('rule-type').value = rule.type;
         
         ruleTypeSelect.dispatchEvent(new Event('change'));
@@ -1357,24 +1538,45 @@ document.addEventListener('DOMContentLoaded', () => {
     addRuleForm.addEventListener('submit', e => {
         e.preventDefault();
         const editingIndex = document.getElementById('editing-rule-index').value;
-        const studentId = document.getElementById('rule-student').value;
         const type = document.getElementById('rule-type').value;
-        const targetStudentSelect = document.getElementById('rule-target-student');
-        const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
-
-        if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
         
-        const newRule = { studentId, type, targetStudentIds };
+        let newRule = { type };
 
+        if (type !== 'MIX_GENDERS') {
+            const studentId = document.getElementById('rule-student').value;
+            if (!studentId) {
+                showNotification("Veuillez sélectionner un élève concerné.");
+                return;
+            }
+            newRule.studentId = studentId;
+
+            if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type)) {
+                const targetStudentSelect = document.getElementById('rule-target-student');
+                const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
+                if (targetStudentIds.length === 0) { 
+                    showNotification("Veuillez sélectionner au moins un élève cible."); 
+                    return; 
+                }
+                if (targetStudentIds.includes(studentId)) { 
+                    showNotification("Un élève ne peut pas avoir une règle avec lui-même."); 
+                    return; 
+                }
+                newRule.targetStudentIds = targetStudentIds;
+            }
+        }
+        
         if (editingIndex !== '') {
             state.rules[parseInt(editingIndex, 10)] = newRule;
-            resetRuleForm(true);
         } else {
+            // Prevent adding multiple global rules of the same type
+            if (type === 'MIX_GENDERS' && state.rules.some(r => r.type === 'MIX_GENDERS')) {
+                showNotification("La règle 'Mélanger les Filles et les Garçons' existe déjà.");
+                return;
+            }
             state.rules.push(newRule);
         }
         
+        resetRuleForm(true);
         saveState();
         calculateAndStoreAllRuleScores();
         renderRules();
@@ -1382,8 +1584,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ruleTypeSelect.addEventListener('change', () => {
         const type = ruleTypeSelect.value;
-        const hideTarget = ['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type);
-        ruleTargetContainer.style.display = hideTarget ? 'none' : 'block';
+        const isGlobalRule = type === 'MIX_GENDERS';
+        const needsTarget = !['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED', 'MIX_GENDERS'].includes(type);
+        
+        ruleStudentContainer.style.display = isGlobalRule ? 'none' : 'block';
+        ruleTargetContainer.style.display = needsTarget ? 'block' : 'none';
     });
     
     rulesList.addEventListener('click', (e) => {
@@ -1417,6 +1622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAllSeatDistances();
         updateTeacherDeskDistances();
         updateAllInterSeatDistances();
+        updateNeighborCache();
     }
 
     function getAllSeatCoordinates() {
@@ -1496,27 +1702,30 @@ document.addEventListener('DOMContentLoaded', () => {
         ruleScores.clear();
         state.rules.forEach((rule, index) => {
             let score = 0;
-            let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
-            
-            if (studentIsPlaced) {
-                switch (rule.type) {
-                    case 'NEAR_BOARD':
-                        score = scoreNearBoardRule(rule, state.placements);
-                        break;
-                    case 'NEAR_TEACHER_DESK':
-                        score = scoreNearTeacherDeskRule(rule, state.placements);
-                        break;
-                    case 'ISOLATED':
-                        score = scoreIsolateRule(rule, state.placements);
-                        break;
-                    case 'MUST_BE_NEAR':
-                        score = scoreMustBeNearRule(rule, state.placements);
-                        break;
-                    case 'FAR_FROM':
-                        score = scoreFarFromRule(rule, state.placements);
-                        break;
-                    default:
-                        score = 100;
+            if (rule.type === 'MIX_GENDERS') {
+                score = scoreMixGendersRule(state.placements);
+            } else {
+                let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
+                if (studentIsPlaced) {
+                    switch (rule.type) {
+                        case 'NEAR_BOARD':
+                            score = scoreNearBoardRule(rule, state.placements);
+                            break;
+                        case 'NEAR_TEACHER_DESK':
+                            score = scoreNearTeacherDeskRule(rule, state.placements);
+                            break;
+                        case 'ISOLATED':
+                            score = scoreIsolateRule(rule, state.placements);
+                            break;
+                        case 'MUST_BE_NEAR':
+                            score = scoreMustBeNearRule(rule, state.placements);
+                            break;
+                        case 'FAR_FROM':
+                            score = scoreFarFromRule(rule, state.placements);
+                            break;
+                        default:
+                            score = 100;
+                    }
                 }
             }
             ruleScores.set(index, score);
@@ -1616,6 +1825,60 @@ document.addEventListener('DOMContentLoaded', () => {
         const score = 100 * (minDistanceToNeighbor / maxDistance);
         return score;
     }
+    
+    function scoreMixGendersRule(placements) {
+        // Find all students who are currently placed
+        const placedStudents = Object.values(placements).flat().filter(id => id !== null);
+
+        if (placedStudents.length < 2) {
+            return 100; // The rule cannot be violated with 0 or 1 student.
+        }
+
+        const individualScores = [];
+
+        // Calculate a score for each placed student
+        for (const studentId of placedStudents) {
+            const student = findStudent(studentId);
+            if (!student) continue;
+
+            // Students with "Other" or unspecified gender get a perfect score as the rule doesn't apply to them.
+            if (student.gender !== 'Garçon' && student.gender !== 'Fille') {
+                individualScores.push(100);
+                continue;
+            }
+
+            const neighbors = neighborCache.get(studentId);
+            // If a student has no neighbors, they don't violate the mixing rule.
+            if (!neighbors || neighbors.length === 0) {
+                individualScores.push(100);
+                continue;
+            }
+
+            // Count how many neighbors have the same gender
+            let sameGenderCount = 0;
+            for (const neighborId of neighbors) {
+                const neighbor = findStudent(neighborId);
+                if (neighbor && neighbor.gender === student.gender) {
+                    sameGenderCount++;
+                }
+            }
+            
+            // The score represents the percentage of neighbors with a *different* gender.
+            // 100% means perfect mixing (0 same-gender neighbors).
+            // 0% means no mixing (all neighbors are the same gender).
+            const score = 100 * (1 - (sameGenderCount / neighbors.length));
+            individualScores.push(score);
+        }
+
+        if (individualScores.length === 0) {
+            return 100; // Default to perfect score if no applicable students were found.
+        }
+
+        // The final rule score is the average of all individual student scores.
+        const totalScore = individualScores.reduce((sum, score) => sum + score, 0);
+        return totalScore / individualScores.length;
+    }
+
 
     function scoreMustBeNearRule(rule, placements) {
         const studentSeatId = getStudentSeatId(rule.studentId, placements);
@@ -1696,27 +1959,30 @@ document.addEventListener('DOMContentLoaded', () => {
         let totalScore = 0;
         for (const rule of state.rules) {
             let ruleScore = 0;
-            let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
-            
-            if (studentIsPlaced) {
-                switch (rule.type) {
-                    case 'NEAR_BOARD':
-                        ruleScore = scoreNearBoardRule(rule, placements);
-                        break;
-                    case 'NEAR_TEACHER_DESK':
-                        ruleScore = scoreNearTeacherDeskRule(rule, placements);
-                        break;
-                    case 'ISOLATED':
-                        ruleScore = scoreIsolateRule(rule, placements);
-                        break;
-                    case 'MUST_BE_NEAR':
-                        ruleScore = scoreMustBeNearRule(rule, placements);
-                        break;
-                    case 'FAR_FROM':
-                        ruleScore = scoreFarFromRule(rule, placements);
-                        break;
-                    default:
-                        ruleScore = 100;
+            if (rule.type === 'MIX_GENDERS') {
+                ruleScore = scoreMixGendersRule(placements);
+            } else {
+                let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
+                if (studentIsPlaced) {
+                    switch (rule.type) {
+                        case 'NEAR_BOARD':
+                            ruleScore = scoreNearBoardRule(rule, placements);
+                            break;
+                        case 'NEAR_TEACHER_DESK':
+                            ruleScore = scoreNearTeacherDeskRule(rule, placements);
+                            break;
+                        case 'ISOLATED':
+                            ruleScore = scoreIsolateRule(rule, placements);
+                            break;
+                        case 'MUST_BE_NEAR':
+                            ruleScore = scoreMustBeNearRule(rule, placements);
+                            break;
+                        case 'FAR_FROM':
+                            ruleScore = scoreFarFromRule(rule, placements);
+                            break;
+                        default:
+                            ruleScore = 100;
+                    }
                 }
             }
             totalScore += ruleScore;
@@ -1784,6 +2050,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const duration = (Date.now() - startTime) / 1000;
             state.placements = bestPlacement;
+            updateNeighborCache(); // Mettre à jour le cache des voisins après le placement auto
             saveState();
             render();
             calculateAndStoreAllRuleScores();
@@ -1836,9 +2103,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const newState = migrateState(JSON.parse(e.target.result));
-                if (newState.students && newState.desks) {
-                    state = newState;
+                let tempState = migrateState(JSON.parse(e.target.result));
+                
+                if (!tempState.settings) {
+                    tempState.settings = {
+                        showGenderColors: true,
+                        genderColors: {
+                            'Garçon': '#3b82f6', 'Fille': '#ef4444',
+                            'Autre': '#eab308', '': '#fde047'
+                        },
+                        numberOfNeighbors: 4
+                    };
+                }
+                 if (!tempState.teacherDesk) {
+                    const defaultSingleDeskWidth = 100;
+                    const defaultSingleDeskHeight = 60;
+                    tempState.teacherDesk = {
+                        id: 'teacher-desk', x: 1000, y: 150,
+                        width: defaultSingleDeskWidth * 1.1, height: defaultSingleDeskHeight * 1.1,
+                        rotation: 0, name: "Mon bureau"
+                    };
+                }
+                if(tempState.settings.numberOfNeighbors === undefined) {
+                     tempState.settings.numberOfNeighbors = 4;
+                }
+                tempState.students.forEach(s => {
+                    if (s.gender === undefined) {
+                        s.gender = '';
+                    }
+                });
+
+                if (tempState.students && tempState.desks) {
+                    state = tempState;
+                    toggleGenderColors.checked = state.settings.showGenderColors;
                     saveState();
                     render();
                     updateStudentsInForms();
@@ -1846,12 +2143,102 @@ document.addEventListener('DOMContentLoaded', () => {
                     showNotification('Données importées avec succès !');
                 } else { showNotification('Fichier JSON invalide.'); }
             } catch (error) {
+                console.error("Erreur d'importation:", error);
                 showNotification('Erreur lors de la lecture du fichier.');
             }
         };
         reader.readAsText(file);
         importFileInput.value = '';
     });
+
+    // --- Customization ---
+    function openCustomizationModal() {
+        document.getElementById('color-boy').value = state.settings.genderColors['Garçon'];
+        document.getElementById('color-girl').value = state.settings.genderColors['Fille'];
+        document.getElementById('color-other').value = state.settings.genderColors['Autre'];
+        document.getElementById('color-unspecified').value = state.settings.genderColors[''];
+        
+        const neighborInput = document.getElementById('neighbor-count');
+        neighborInput.value = state.settings.numberOfNeighbors;
+        neighborInput.max = Math.max(0, state.students.length - 1);
+
+        customizationModal.classList.remove('hidden');
+    }
+
+    function closeCustomizationModal() {
+        customizationModal.classList.add('hidden');
+    }
+
+    customizationBtn.addEventListener('click', openCustomizationModal);
+    closeCustomizationModalBtn.addEventListener('click', closeCustomizationModal);
+    customizationModal.addEventListener('click', e => {
+        if (e.target === customizationModal) {
+            closeCustomizationModal();
+        }
+    });
+
+    customizationForm.addEventListener('submit', e => {
+        e.preventDefault();
+        state.settings.genderColors['Garçon'] = document.getElementById('color-boy').value;
+        state.settings.genderColors['Fille'] = document.getElementById('color-girl').value;
+        state.settings.genderColors['Autre'] = document.getElementById('color-other').value;
+        state.settings.genderColors[''] = document.getElementById('color-unspecified').value;
+        
+        const neighborCount = parseInt(document.getElementById('neighbor-count').value, 10);
+        const maxNeighbors = Math.max(0, state.students.length - 1);
+        state.settings.numberOfNeighbors = Math.max(0, Math.min(neighborCount, maxNeighbors));
+
+        updateNeighborCache();
+        saveState();
+        render();
+        closeCustomizationModal();
+        showNotification('Paramètres sauvegardés !');
+    });
+
+    resetColorsBtn.addEventListener('click', () => {
+        const defaultColors = {
+            'Garçon': '#3b82f6',
+            'Fille': '#ef4444',
+            'Autre': '#eab308',
+            '': '#fde047'
+        };
+        state.settings.genderColors = defaultColors;
+        openCustomizationModal(); // Re-populate inputs with default values
+    });
+
+    toggleGenderColors.addEventListener('change', () => {
+        state.settings.showGenderColors = toggleGenderColors.checked;
+        saveState();
+        render();
+    });
+    
+    // --- Neighbor Logic ---
+    function updateNeighborCache() {
+        neighborCache.clear();
+        const placedStudents = state.students.filter(s => getStudentSeatId(s.id, state.placements));
+
+        placedStudents.forEach(studentA => {
+            const studentASeatId = getStudentSeatId(studentA.id, state.placements);
+            const distances = [];
+
+            placedStudents.forEach(studentB => {
+                if (studentA.id === studentB.id) return;
+
+                const studentBSeatId = getStudentSeatId(studentB.id, state.placements);
+                const key = [studentASeatId, studentBSeatId].sort().join('--');
+                const distance = interSeatDistancesCache.get(key);
+                if (distance !== undefined) {
+                    distances.push({ studentId: studentB.id, distance });
+                }
+            });
+
+            distances.sort((a, b) => a.distance - b.distance);
+            const neighbors = distances.slice(0, state.settings.numberOfNeighbors).map(d => d.studentId);
+            neighborCache.set(studentA.id, neighbors);
+        });
+        console.log("Cache des voisins mis à jour.");
+    }
+
 
     // --- INITIALIZATION ---
     function init() {
@@ -1860,10 +2247,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 sidebarWrapper.classList.toggle('collapsed');
             });
         }
+        classroomContent.addEventListener('click', e => {
+            const studentEl = e.target.closest('.student-container');
+            if (studentEl) {
+                const studentId = studentEl.dataset.studentId;
+                if (selectedStudentId === studentId) {
+                    selectedStudentId = null; // Deselect if clicking the same student
+                } else {
+                    selectedStudentId = studentId;
+                }
+            } else if (!e.target.closest('.desk-container')) {
+                 selectedStudentId = null;
+                 if (selectedDeskIds.size > 0) {
+                     selectedDeskIds.clear();
+                 }
+            }
+            render();
+        });
+
         classroomArea.addEventListener('mousedown', e => {
-            // If we click on an element that is NOT the background, let the specific handlers (like desk move) take care of it.
+            if (e.target.closest('.student-container')) return;
+
             if (e.target !== classroomArea && e.target !== classroomContent) {
-                // This part handles deselecting if clicking on the background without starting a drag
                 if (!e.target.closest('.desk-container')) {
                     if (selectedDeskIds.size > 0) {
                         selectedDeskIds.clear();
@@ -1873,7 +2278,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // If ctrl is pressed, don't start selection rectangle, allow deselecting
             if(e.ctrlKey) return;
             
             e.preventDefault();
@@ -1904,9 +2308,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 selectedDeskIds.clear(); // Clear selection at the beginning of each move
                 state.desks.forEach(desk => {
-                    // This is a simple Axis-Aligned Bounding Box (AABB) collision check.
-                    // It does not account for desk rotation. For rotated desks, this will check against
-                    // the desk's un-rotated bounding box.
                     const deskRect = {
                         x1: desk.x,
                         y1: desk.y,
@@ -1941,31 +2342,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedState = localStorage.getItem('classroomPlanState');
         if (savedState) {
             console.log("Données trouvées dans le localStorage, chargement...");
-            state = migrateState(JSON.parse(savedState));
-            if (!state.board) {
-                 const caWidth = classroomArea.offsetWidth || 1024;
-                 const defaultBoardWidth = 190 * 5; // 950
-                 state.board = { x: caWidth / 2 - defaultBoardWidth / 2, y: 10, width: defaultBoardWidth, height: 25 };
-            }
-            if (!state.teacherDesk) {
+            let tempState = migrateState(JSON.parse(savedState));
+            // Ensure all new top-level state properties exist
+            if (!tempState.teacherDesk) {
                 const defaultSingleDeskWidth = 100;
                 const defaultSingleDeskHeight = 60;
-                state.teacherDesk = {
-                    id: 'teacher-desk',
-                    x: 1000, y: 150,
-                    width: defaultSingleDeskWidth * 1.1,
-                    height: defaultSingleDeskHeight * 1.1,
+                tempState.teacherDesk = {
+                    id: 'teacher-desk', x: 1000, y: 150,
+                    width: defaultSingleDeskWidth * 1.1, height: defaultSingleDeskHeight * 1.1,
                     rotation: 0, name: "Mon bureau"
                 };
             }
-            state.desks.forEach((desk, index) => {
-                if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; }
-                if (desk.rotation === undefined) { desk.rotation = 0; }
+            if (!tempState.settings) {
+                tempState.settings = {
+                    showGenderColors: true,
+                    genderColors: {
+                        'Garçon': '#3b82f6', 'Fille': '#ef4444',
+                        'Autre': '#eab308', '': '#fde047'
+                    },
+                    numberOfNeighbors: 4
+                };
+            }
+            if(tempState.settings.numberOfNeighbors === undefined) {
+                 tempState.settings.numberOfNeighbors = 4;
+            }
+            tempState.students.forEach(s => {
+                if (s.gender === undefined) s.gender = '';
             });
+            state = tempState;
+
         } else {
             console.log("Aucune donnée trouvée, création d'une classe par défaut.");
-            const hermione = { id: crypto.randomUUID(), firstName: 'Hermione', lastName: 'Granger' };
-            const harry = { id: crypto.randomUUID(), firstName: 'Harry', lastName: 'Potter' };
+            const hermione = { id: crypto.randomUUID(), firstName: 'Hermione', lastName: 'Granger', gender: 'Fille' };
+            const harry = { id: crypto.randomUUID(), firstName: 'Harry', lastName: 'Potter', gender: 'Garçon' };
             state.students.push(hermione, harry);
 
             state.rules.push({ studentId: hermione.id, type: 'NEAR_BOARD', targetStudentIds: [] });
@@ -2004,9 +2413,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             saveState();
         }
+
+        toggleGenderColors.checked = state.settings.showGenderColors;
+
+        updateAllDistances();
         render();
         updateStudentsInForms();
-        updateAllDistances();
         
         document.getElementById('rule-type').value = 'NEAR_BOARD';
         ruleTypeSelect.dispatchEvent(new Event('change'));
@@ -2036,4 +2448,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+
 
