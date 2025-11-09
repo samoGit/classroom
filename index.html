@@ -1,3 +1,6 @@
+<!-- Last Update: 2025-11-09 23:00 - Correction bug: masque "Ajouter plusieurs" en mode édition -->
+<!-- Last Update: 2025-11-09 22:51 - Ajout modal "Ajouter plusieurs élèves" (Solution 3) -->
+<!-- Last Update: 2025-11-09 22:37 - Rendu le nom de famille optionnel. -->
 <!-- Last Update: 2025-11-09 22:01 - Ajout du bouton "Supprimer tous les élèves" -->
 <!DOCTYPE html>
 <html lang="fr">
@@ -307,12 +310,33 @@
                     <input type="text" id="student-firstName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
                 </div>
                 <div class="mb-4">
-                    <label for="student-lastName" class="block text-sm font-medium text-gray-700">Nom</label>
-                    <input type="text" id="student-lastName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required>
+                    <label for="student-lastName" class="block text-sm font-medium text-gray-700">Nom (Optionnel)</label>
+                    <input type="text" id="student-lastName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
                 </div>
                 <div class="flex justify-end space-x-2">
+                    <button type="button" id="open-batch-modal-btn" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 mr-auto">Ajouter plusieurs...</button>
                     <button type="button" id="cancel-student-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Annuler</button>
                     <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Sauvegarder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Batch Student Modal (hidden by default) -->
+    <div id="student-batch-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-xl mx-4">
+            <h2 class="text-xl font-bold mb-4">Ajouter plusieurs élèves</h2>
+            <form id="student-batch-form">
+                <p class="text-sm text-gray-600 mb-3">Copiez-collez votre liste. Mettez un élève par ligne. <br>Format : <code>Prénom</code> ou <code>Prénom Nom</code></p>
+                <div class="mb-4">
+                    <textarea id="student-batch-list" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 h-48" placeholder="Harry Potter
+Hermione Granger
+Ron
+..."></textarea>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="cancel-batch-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Annuler</button>
+                    <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Ajouter les élèves</button>
                 </div>
             </form>
         </div>
@@ -394,6 +418,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const deskSettingsForm = document.getElementById('desk-settings-form');
     const confirmationModal = document.getElementById('confirmation-modal');
     const helpModal = document.getElementById('help-modal');
+    const studentBatchModal = document.getElementById('student-batch-modal');
+    const studentBatchForm = document.getElementById('student-batch-form');
     
     // Buttons
     const addStudentActionBtn = document.getElementById('add-student-action-btn');
@@ -411,6 +437,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const zoomOutBtn = document.getElementById('zoom-out-btn');
     const zoomResetBtn = document.getElementById('zoom-reset-btn');
     const zoomDisplay = document.getElementById('zoom-display');
+    const openBatchModalBtn = document.getElementById('open-batch-modal-btn');
+    const cancelBatchBtn = document.getElementById('cancel-batch-btn');
     
     // Forms
     const addRuleForm = document.getElementById('add-rule-form');
@@ -446,7 +474,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const findDesk = (id) => state.desks.find(d => d.id === id);
     const getStudentFullName = (id) => {
         const student = findStudent(id);
-        return student ? `${student.firstName} ${student.lastName}` : 'Inconnu';
+        if (!student) return 'Inconnu';
+        return student.lastName ? `${student.firstName} ${student.lastName}` : student.firstName;
     };
 
     function deleteStudent(studentId) {
@@ -556,8 +585,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const placedStudentId = state.placements[desk.id] ? state.placements[desk.id][i] : null;
                 if (placedStudentId) {
                     const student = findStudent(placedStudentId);
+                    const studentNameDisplay = student.lastName ? `${student.firstName} ${student.lastName.charAt(0)}.` : student.firstName;
                     seatEl.classList.add('student-container');
-                    seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
+                    seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${studentNameDisplay}</span>`;
                     seatEl.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(placedStudentId); });
                     seatEl.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(placedStudentId)} ?`, () => { deleteStudent(placedStudentId); }); });
                     seatEl.classList.remove('bg-yellow-700');
@@ -669,7 +699,8 @@ document.addEventListener('DOMContentLoaded', () => {
             studentChip.style.top = `${currentY}px`;
             studentChip.style.width = `${chipWidth}px`;
             studentChip.style.height = `${chipHeight}px`;
-            studentChip.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${student.firstName} ${student.lastName.charAt(0)}.</span>`;
+            const studentNameDisplay = student.lastName ? `${student.firstName} ${student.lastName.charAt(0)}.` : student.firstName;
+            studentChip.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${studentNameDisplay}</span>`;
             studentChip.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(student.id); });
             studentChip.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(student.id)} ?`, () => { deleteStudent(student.id); }); });
             studentChip.addEventListener('dragstart', handleDragStart);
@@ -738,13 +769,17 @@ document.addEventListener('DOMContentLoaded', () => {
         studentForm.reset();
         document.getElementById('student-id').value = '';
         if (studentId) {
+            // Mode ÉDITION
             const student = findStudent(studentId);
             document.getElementById('modal-title').textContent = 'Modifier un Élève';
             document.getElementById('student-id').value = student.id;
             document.getElementById('student-firstName').value = student.firstName;
             document.getElementById('student-lastName').value = student.lastName;
+            openBatchModalBtn.style.display = 'none'; // Cacher le bouton
         } else {
+            // Mode AJOUT
             document.getElementById('modal-title').textContent = 'Ajouter un Élève';
+            openBatchModalBtn.style.display = 'block'; // Afficher le bouton
         }
         studentModal.classList.remove('hidden');
     }
@@ -788,6 +823,64 @@ document.addEventListener('DOMContentLoaded', () => {
 
     addStudentActionBtn.addEventListener('click', () => openStudentModal());
     cancelStudentBtn.addEventListener('click', closeStudentModal);
+
+    // --- Batch Student Modal Logic ---
+    openBatchModalBtn.addEventListener('click', () => {
+        closeStudentModal(); // Close the single-add modal
+        studentBatchModal.classList.remove('hidden'); // Show the batch-add modal
+        document.getElementById('student-batch-list').value = ''; // Clear textarea
+        document.getElementById('student-batch-list').focus();
+    });
+
+    cancelBatchBtn.addEventListener('click', () => {
+        studentBatchModal.classList.add('hidden');
+    });
+
+    studentBatchModal.addEventListener('click', (e) => {
+        if (e.target === studentBatchModal) {
+            studentBatchModal.classList.add('hidden');
+        }
+    });
+
+    studentBatchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = document.getElementById('student-batch-list').value;
+        const lines = text.split('\n');
+        let addedCount = 0;
+
+        lines.forEach(line => {
+            const trimmedLine = line.trim();
+            if (trimmedLine === '') return; // Skip empty lines
+
+            const parts = trimmedLine.split(' ');
+            const firstName = parts.shift() || ''; // Get the first part as firstname
+            const lastName = parts.join(' '); // Join the rest as lastname
+
+            if (firstName) {
+                const studentData = {
+                    id: crypto.randomUUID(),
+                    firstName: firstName,
+                    lastName: lastName
+                };
+                state.students.push(studentData);
+                addedCount++;
+            }
+        });
+
+        if (addedCount > 0) {
+            saveState();
+            render();
+            updateStudentsInForms();
+            calculateAndStoreAllRuleScores();
+            showNotification(`${addedCount} élève(s) ajouté(s).`);
+            studentBatchModal.classList.add('hidden');
+        } else {
+            showNotification("Aucun élève n'a été ajouté. Le champ était peut-être vide.");
+        }
+    });
+
+
+    // --- Help Modal Logic ---
     scoreHelpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'));
     closeHelpBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
     helpModal.addEventListener('click', (e) => {
