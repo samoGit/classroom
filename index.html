@@ -1,3 +1,6 @@
+<!-- Last Update: 2025-11-09 23:46 - Déplacement du bouton de zoom (gauche/droite) et suppression du reset 100% -->
+<!-- Last Update: 2025-11-09 23:43 - L'icône du bouton de zoom change dynamiquement (gauche/droite) -->
+<!-- Last Update: 2025-11-09 23:37 - Ajout de la transparence et du déplacement pour les contrôles de zoom -->
 <!-- Last Update: 2025-11-09 23:00 - Correction bug: masque "Ajouter plusieurs" en mode édition -->
 <!-- Last Update: 2025-11-09 22:51 - Ajout modal "Ajouter plusieurs élèves" (Solution 3) -->
 <!-- Last Update: 2025-11-09 22:37 - Rendu le nom de famille optionnel. -->
@@ -161,6 +164,13 @@
         #sidebar-wrapper.collapsed #toggle-sidebar-icon {
             transform: rotate(180deg);
         }
+        #zoom-controls {
+            opacity: 0.5;
+            transition: opacity 0.3s ease-in-out, left 0.3s ease-in-out, right 0.3s ease-in-out;
+        }
+        #zoom-controls:hover {
+            opacity: 1.0;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex flex-col md:flex-row h-screen overflow-hidden">
@@ -237,15 +247,14 @@
             <div id="classroom-content">
                     <!-- Desks and Board will be injected here -->
             </div>
-            <div id="zoom-controls" class="absolute bottom-4 right-4 bg-white/80 backdrop-blur-sm rounded-lg shadow-md flex items-center p-1 space-x-1">
+            <div id="zoom-controls" class="absolute bottom-4 bg-white/80 backdrop-blur-sm rounded-lg shadow-md flex items-center p-1 space-x-1">
+                 <button id="move-zoom-btn" class="w-8 h-8 rounded-md hover:bg-gray-200" title="Déplacer les contrôles">
+                    <!-- L'icône est maintenant insérée par JavaScript -->
+                 </button>
                  <button id="zoom-out-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">-</button>
                  <span id="zoom-display" class="text-sm font-semibold w-12 text-center">100%</span>
                  <button id="zoom-in-btn" class="w-8 h-8 font-bold text-lg rounded-md hover:bg-gray-200">+</button>
-                 <button id="zoom-reset-btn" class="w-8 h-8 rounded-md hover:bg-gray-200">
-                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
-                           <path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm11 11a1 1 0 10-2 0v-1a1 1 0 10-2 0v1a1 1 0 102 0V9a1 1 0 102 0v4zM8 9a1 1 0 011-1h1a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
-                     </svg>
-                 </button>
+                 <!-- Le bouton Reset 100% a été supprimé -->
             </div>
         </div>
     </main>
@@ -435,8 +444,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeHelpBtn = document.getElementById('close-help-btn');
     const zoomInBtn = document.getElementById('zoom-in-btn');
     const zoomOutBtn = document.getElementById('zoom-out-btn');
-    const zoomResetBtn = document.getElementById('zoom-reset-btn');
+    // zoomResetBtn supprimé
     const zoomDisplay = document.getElementById('zoom-display');
+    const zoomControls = document.getElementById('zoom-controls'); // Ajout
+    const moveZoomBtn = document.getElementById('move-zoom-btn'); // Ajout
     const openBatchModalBtn = document.getElementById('open-batch-modal-btn');
     const cancelBatchBtn = document.getElementById('cancel-batch-btn');
     
@@ -1959,6 +1970,40 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        // --- Logique pour les contrôles de zoom ---
+        const arrowLeftIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7 7-7M21 12H3" />
+                           </svg>`;
+        const arrowRightIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                 <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7-7 7M3 12h18" />
+                            </svg>`;
+
+        function updateMoveButtonIcon() {
+            if (zoomControls.classList.contains('right-4')) {
+                // Les contrôles sont à droite, l'icône doit montrer "aller à gauche"
+                moveZoomBtn.innerHTML = arrowLeftIcon;
+                moveZoomBtn.title = "Déplacer à gauche";
+                // Placer le bouton au début (à gauche) des contrôles
+                zoomControls.insertBefore(moveZoomBtn, zoomControls.firstChild);
+            } else {
+                // Les contrôles sont à gauche, l'icône doit montrer "aller à droite"
+                moveZoomBtn.innerHTML = arrowRightIcon;
+                moveZoomBtn.title = "Déplacer à droite";
+                // Placer le bouton à la fin (à droite) des contrôles
+                zoomControls.appendChild(moveZoomBtn);
+            }
+        }
+
+        zoomControls.classList.add('right-4'); // Définir la position initiale
+        updateMoveButtonIcon(); // Définir l'icône initiale
+
+        moveZoomBtn.addEventListener('click', () => {
+            zoomControls.classList.toggle('right-4');
+            zoomControls.classList.toggle('left-4');
+            updateMoveButtonIcon(); // Mettre à jour l'icône après le clic
+        });
+        // --- Fin de la logique de zoom ---
+
         // Ajout de l'écouteur pour le nouveau bouton
         deleteAllStudentsBtn.addEventListener('click', () => {
             showConfirmation(
@@ -2132,10 +2177,7 @@ document.addEventListener('DOMContentLoaded', () => {
         zoomLevel = Math.max(0.25, zoomLevel - 0.1);
         updateZoom();
     });
-    zoomResetBtn.addEventListener('click', () => {
-        zoomLevel = 1.0;
-        updateZoom();
-    });
+    // Le listener pour zoomResetBtn a été supprimé
 
     init();
 });
