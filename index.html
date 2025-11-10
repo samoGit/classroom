@@ -1,3 +1,4 @@
+<!-- Last Update: 2025-11-10 22:10 - Amélioration du chargement ("Best Effort") pour les sauvegardes corrompues -->
 <!-- Last Update: 2025-11-10 17:58 - Modification de l'algorithme de score pour "Doivent être éloignés" (médiane) -->
 <!-- Last Update: 2025-11-10 12:20 - Correction d'une race condition/cache périmé lors de l'appel à updateAllDistances -->
 <!-- ... (previous version tags) ... -->
@@ -490,6 +491,178 @@ document.addEventListener('DOMContentLoaded', () => {
         return stateToMigrate;
     }
 
+    // --- NOUVELLE FONCTION DE CHARGEMENT SÉCURISÉ ---
+    /**
+     * Tente de charger un état à partir d'une chaîne JSON en utilisant une stratégie "Best Effort".
+     * Les données invalides sont ignorées et consignées dans la console.
+     * @param {string} dataString - La chaîne JSON brute à parser.
+     * @returns {object | null} Un objet d'état valide, ou null si le JSON est totalement illisible.
+     */
+    function loadStateBestEffort(dataString) {
+        let parsedData;
+        const errors = [];
+        
+        // 1. Essayer de parser le JSON global
+        try {
+            parsedData = JSON.parse(dataString);
+            if (typeof parsedData !== 'object' || parsedData === null) {
+                throw new Error("Le fichier n'est pas un objet JSON valide.");
+            }
+        } catch (e) {
+            console.error("Erreur critique: Impossible de parser le JSON. Le chargement est annulé.", e.message);
+            showNotification("Erreur: Fichier JSON illisible.");
+            return null; // Annuler le chargement
+        }
+
+        // 2. Migrer les anciennes structures de données
+        parsedData = migrateState(parsedData); // migrateState existe déjà et gère les règles
+
+        // 3. Créer un nouvel état vide avec les valeurs par défaut
+        const newState = {
+            students: [],
+            desks: [],
+            teacherDesk: null,
+            board: null,
+            placements: {},
+            rules: [],
+            lockedStudents: [],
+        };
+
+        // --- Helpers de validation ---
+        const isValidStudent = (s) => s && typeof s === 'object' && typeof s.id === 'string' && typeof s.firstName === 'string' && typeof s.lastName === 'string';
+        const isValidDesk = (d) => d && typeof d === 'object' && typeof d.id === 'string' && typeof d.x === 'number' && typeof d.y === 'number' && typeof d.width === 'number' && typeof d.height === 'number' && typeof d.capacity === 'number'; // name/rotation sont optionnels/defaulted
+        const isValidRule = (r) => r && typeof r === 'object' && typeof r.type === 'string' && Array.isArray(r.targetStudentIds); // studentId can be null
+
+        // 4. Valider et charger les ÉTUDIANTS
+        if (Array.isArray(parsedData.students)) {
+            parsedData.students.forEach((student, i) => {
+                if (isValidStudent(student)) {
+                    newState.students.push(student);
+                } else {
+                    errors.push(`Élève (index ${i}) invalide et ignoré : ${JSON.stringify(student)}`);
+                }
+            });
+        }
+
+        // 5. Valider et charger les BUREAUX
+        if (Array.isArray(parsedData.desks)) {
+            parsedData.desks.forEach((desk, i) => {
+                if (isValidDesk(desk)) {
+                    // Assurer les valeurs par défaut pour les champs optionnels
+                    desk.name = typeof desk.name === 'string' ? desk.name : "";
+                    desk.rotation = typeof desk.rotation === 'number' ? desk.rotation : 0;
+                    newState.desks.push(desk);
+                } else {
+                    errors.push(`Bureau (index ${i}) invalide et ignoré : ${JSON.stringify(desk)}`);
+                }
+            });
+        }
+        
+        // 6. Valider et charger le BUREAU PROF & TABLEAU
+        if (isValidDesk(parsedData.teacherDesk)) { // Réutilise isValidDesk (il a l'ID, x, y, etc.)
+            parsedData.teacherDesk.name = typeof parsedData.teacherDesk.name === 'string' ? parsedData.teacherDesk.name : "Mon bureau";
+            parsedData.teacherDesk.rotation = typeof parsedData.teacherDesk.rotation === 'number' ? parsedData.teacherDesk.rotation : 0;
+            newState.teacherDesk = parsedData.teacherDesk;
+        } else if (parsedData.teacherDesk) { // S'il existe mais n'est pas valide
+             errors.push(`Bureau Professeur invalide et ignoré : ${JSON.stringify(parsedData.teacherDesk)}`);
+        }
+
+        if (parsedData.board && typeof parsedData.board === 'object' && typeof parsedData.board.x === 'number' && typeof parsedData.board.y === 'number' && typeof parsedData.board.width === 'number' && typeof parsedData.board.height === 'number') {
+            newState.board = parsedData.board;
+        } else if (parsedData.board) {
+             errors.push(`Tableau invalide et ignoré : ${JSON.stringify(parsedData.board)}`);
+        }
+
+        // 7. Valider et charger les RÈGLES
+        const validStudentIds = new Set(newState.students.map(s => s.id));
+        if (Array.isArray(parsedData.rules)) {
+            parsedData.rules.forEach((rule, i) => {
+                if (!isValidRule(rule)) {
+                    errors.push(`Règle (index ${i}) a un format invalide et a été ignorée : ${JSON.stringify(rule)}`);
+                    return; // skip
+                }
+
+                // Valider les IDs d'élèves dans la règle
+                if (rule.studentId && !validStudentIds.has(rule.studentId)) {
+                    errors.push(`Règle (index ${i}) ignorée car l'élève source ${rule.studentId} n'existe pas.`);
+                    return; // skip
+                }
+                
+                const validTargets = rule.targetStudentIds.filter(id => validStudentIds.has(id));
+                if (validTargets.length !== rule.targetStudentIds.length) {
+                     errors.push(`Règle (index ${i}) : certains élèves cibles invalides (${rule.targetStudentIds.filter(id => !validStudentIds.has(id)).join(', ')}) ont été retirés.`);
+                }
+                rule.targetStudentIds = validTargets; // Ne garder que les cibles valides
+                
+                newState.rules.push(rule);
+            });
+        }
+
+        // 8. Valider et charger les PLACEMENTS (après élèves et bureaux)
+        const validDeskIds = new Set(newState.desks.map(d => d.id));
+        const usedStudentIds = new Set(); // Pour éviter qu'un élève soit à deux places
+
+        if (parsedData.placements && typeof parsedData.placements === 'object') {
+            for (const deskId in parsedData.placements) {
+                const placementArray = parsedData.placements[deskId];
+                
+                if (!validDeskIds.has(deskId)) {
+                    errors.push(`Placement ignoré : le bureau ${deskId} n'existe pas.`);
+                    continue; // skip ce bureau
+                }
+                
+                const desk = newState.desks.find(d => d.id === deskId);
+                if (!Array.isArray(placementArray)) {
+                    errors.push(`Placement ignoré pour le bureau ${deskId} : les données ne sont pas un tableau. Création d'un placement vide.`);
+                    newState.placements[deskId] = Array(desk.capacity).fill(null);
+                    continue; // skip ce bureau
+                }
+                
+                const validPlacement = [];
+                for(let i = 0; i < desk.capacity; i++) {
+                    const studentId = placementArray[i]; // Peut être undefined si le tableau est trop court
+                    
+                    if (studentId === null || studentId === undefined) {
+                        validPlacement.push(null);
+                    } else if (!validStudentIds.has(studentId)) {
+                        validPlacement.push(null); // ID étudiant invalide, on met null
+                        errors.push(`Placement ignoré pour ${studentId} sur bureau ${deskId} : l'élève n'existe pas.`);
+                    } else if (usedStudentIds.has(studentId)) {
+                        validPlacement.push(null); // Élève déjà placé ailleurs
+                        errors.push(`Placement ignoré pour ${studentId} sur bureau ${deskId} : l'élève est déjà placé ailleurs.`);
+                    } else {
+                        validPlacement.push(studentId);
+                        usedStudentIds.add(studentId);
+                    }
+                }
+                newState.placements[deskId] = validPlacement;
+            }
+        }
+
+        // 9. Valider et charger LOCKED STUDENTS
+        if (Array.isArray(parsedData.lockedStudents)) {
+            parsedData.lockedStudents.forEach((studentId, i) => {
+                if (validStudentIds.has(studentId) && usedStudentIds.has(studentId)) { // Doit exister ET être placé
+                    newState.lockedStudents.push(studentId);
+                } else {
+                    errors.push(`Élève verrouillé (index ${i}) ignoré : l'élève ${studentId} n'existe pas ou n'est pas placé.`);
+                }
+            });
+        }
+        
+        // 10. Afficher le rapport d'erreurs
+        if (errors.length > 0) {
+            console.warn(`[Best Effort Load] ${errors.length} erreurs/avertissements lors du chargement des données (données ignorées) :`);
+            errors.forEach(err => console.warn(`- ${err}`));
+            showNotification(`${errors.length} erreurs lors du chargement. Voir la console.`);
+        } else {
+            showNotification('Données importées avec succès !');
+        }
+
+        return newState;
+    }
+
+
     // --- UTILITY FUNCTIONS ---
     const findStudent = (id) => state.students.find(s => s.id === id);
     const findDesk = (id) => state.desks.find(d => d.id === id);
@@ -610,30 +783,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 const placedStudentId = state.placements[desk.id] ? state.placements[desk.id][i] : null;
                 if (placedStudentId) {
                     const student = findStudent(placedStudentId);
-                    const studentNameDisplay = student.lastName ? `${student.firstName} ${student.lastName.charAt(0)}.` : student.firstName;
-                    seatEl.classList.add('student-container');
-                    seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${studentNameDisplay}</span>`;
-                    
-                    // --- NOUVEAU : Appliquer la rotation inverse au nom ---
-                    const nameSpan = seatEl.querySelector('span');
-                    if (nameSpan) {
-                        nameSpan.style.transform = `rotate(${-(desk.rotation || 0)}deg)`;
-                        nameSpan.style.display = 'inline-block'; // Nécessaire pour que transform s'applique
-                    }
-                    // --- FIN NOUVEAU ---
+                    // --- AJOUT VÉRIFICATION ---
+                    // S'assure que l'étudiant existe toujours (au cas où les données de placement sont désynchronisées)
+                    if (student) {
+                        const studentNameDisplay = student.lastName ? `${student.firstName} ${student.lastName.charAt(0)}.` : student.firstName;
+                        seatEl.classList.add('student-container');
+                        seatEl.innerHTML = `<button class="student-action-btn student-edit-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button><button class="student-action-btn student-delete-btn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg></button><span>${studentNameDisplay}</span>`;
+                        
+                        // --- NOUVEAU : Appliquer la rotation inverse au nom ---
+                        const nameSpan = seatEl.querySelector('span');
+                        if (nameSpan) {
+                            nameSpan.style.transform = `rotate(${-(desk.rotation || 0)}deg)`;
+                            nameSpan.style.display = 'inline-block'; // Nécessaire pour que transform s'applique
+                        }
+                        // --- FIN NOUVEAU ---
 
-                    seatEl.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(placedStudentId); });
-                    seatEl.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(placedStudentId)} ?`, () => { deleteStudent(placedStudentId); }); });
-                    seatEl.classList.remove('bg-yellow-700');
-                    seatEl.classList.add('bg-green-600', 'cursor-grab');
-                    seatEl.draggable = true;
-                    seatEl.dataset.studentId = placedStudentId;
-                    seatEl.addEventListener('dragstart', handleDragStart);
-                    const lockBtn = document.createElement('button');
-                    lockBtn.className = 'seat-lock-icon';
-                    const isLocked = state.lockedStudents.includes(placedStudentId);
-                    seatEl.addEventListener('click', (e) => { e.stopPropagation(); toggleStudentLock(placedStudentId); });
-                    seatEl.appendChild(lockBtn);
+                        seatEl.querySelector('.student-edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openStudentModal(placedStudentId); });
+                        seatEl.querySelector('.student-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); showConfirmation(`Voulez-vous vraiment supprimer l'élève ${getStudentFullName(placedStudentId)} ?`, () => { deleteStudent(placedStudentId); }); });
+                        seatEl.classList.remove('bg-yellow-700');
+                        seatEl.classList.add('bg-green-600', 'cursor-grab');
+                        seatEl.draggable = true;
+                        seatEl.dataset.studentId = placedStudentId;
+                        const lockBtn = document.createElement('button');
+                        lockBtn.className = 'seat-lock-icon';
+                        const isLocked = state.lockedStudents.includes(placedStudentId);
+                        seatEl.addEventListener('click', (e) => { e.stopPropagation(); toggleStudentLock(placedStudentId); });
+                        seatEl.appendChild(lockBtn);
+                    } else {
+                        // L'étudiant n'existe pas, mais était dans les placements, on nettoie
+                        state.placements[desk.id][i] = null;
+                        // On affiche "Libre"
+                        const libreSpan = document.createElement('span');
+                        libreSpan.textContent = 'Libre';
+                        libreSpan.style.transform = `rotate(${-(desk.rotation || 0)}deg)`;
+                        libreSpan.style.display = 'inline-block';
+                        seatEl.appendChild(libreSpan);
+                    }
+                     // --- FIN VÉRIFICATION ---
                 } else {
                     // seatEl.textContent = 'Libre'; // Ancienne méthode
                     // --- NOUVEAU : Appliquer la rotation inverse au texte "Libre" ---
@@ -1030,7 +1216,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let draggedStudentId = null;
 
     function handleDragStart(e) {
-        if (e.target.classList.contains('student-action-btn')) { e.preventDefault(); return; }
+        if (e.target.closest('.student-action-btn')) { e.preventDefault(); return; }
         draggedStudentId = e.target.closest('[data-student-id]').dataset.studentId;
         e.dataTransfer.effectAllowed = 'move';
         setTimeout(() => e.target.closest('[data-student-id]').classList.add('dragging'), 0);
@@ -2141,30 +2327,51 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     importBtn.addEventListener('click', () => importFileInput.click());
+    
+    // --- MODIFIÉ : Utilisation de la nouvelle fonction de chargement sécurisé ---
     importFileInput.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            try {
-                const newState = migrateState(JSON.parse(e.target.result));
-                if (newState.students && newState.desks) {
-                    state = newState;
-                    saveState();
-                    render();
-                    updateStudentsInForms();
-                    updateAllDistances();
-                    showNotification('Données importées avec succès !');
-                } else { showNotification('Fichier JSON invalide.'); }
-            } catch (error) {
-                showNotification('Erreur lors de la lecture du fichier.');
+            const newState = loadStateBestEffort(e.target.result); // NOUVEL APPEL
+
+            if (newState) { // Si le chargement n'a pas été annulé (JSON lisible)
+                state = newState;
+                
+                // S'assurer que le tableau et le bureau prof existent (au cas où ils étaient invalides/absents)
+                if (!state.board) {
+                     const caWidth = classroomArea.offsetWidth || 1024;
+                     const defaultBoardWidth = 190 * 5; 
+                     state.board = { x: caWidth / 2 - defaultBoardWidth / 2, y: 10, width: defaultBoardWidth, height: 25 };
+                     console.warn("[Best Effort Load] Aucun tableau valide trouvé. Un tableau par défaut a été créé.");
+                }
+                if (!state.teacherDesk) {
+                     const defaultSingleDeskWidth = 100;
+                     const defaultSingleDeskHeight = 60;
+                     state.teacherDesk = {
+                         id: 'teacher-desk', x: 1000, y: 150,
+                         width: defaultSingleDeskWidth * 1.1,
+                         height: defaultSingleDeskHeight * 1.1,
+                         rotation: 0, name: "Mon bureau"
+                     };
+                     console.warn("[Best Effort Load] Aucun bureau professeur valide trouvé. Un bureau par défaut a été créé.");
+                }
+
+                saveState();
+                render();
+                updateStudentsInForms();
+                updateAllDistances();
+                // La notification est maintenant gérée DANS loadStateBestEffort
             }
+            // L'ancien 'else' et 'catch' sont gérés par loadStateBestEffort
         };
         reader.readAsText(file);
         importFileInput.value = '';
     });
 
     // --- INITIALIZATION ---
+    // --- MODIFIÉ : Intégration de la nouvelle logique de chargement sécurisé ---
     function init() {
         if (toggleSidebarBtn) {
             toggleSidebarBtn.addEventListener('click', () => {
@@ -2293,31 +2500,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log("Tentative de lecture des données depuis le localStorage...");
         const savedState = localStorage.getItem('classroomPlanState');
+        let loadedSuccessfully = false; // Flag
+        
         if (savedState) {
             console.log("Données trouvées dans le localStorage, chargement...");
-            state = migrateState(JSON.parse(savedState));
-            if (!state.board) {
-                 const caWidth = classroomArea.offsetWidth || 1024;
-                 const defaultBoardWidth = 190 * 5; // 950
-                 state.board = { x: caWidth / 2 - defaultBoardWidth / 2, y: 10, width: defaultBoardWidth, height: 25 };
+            const newState = loadStateBestEffort(savedState);
+            if (newState) {
+                state = newState;
+                loadedSuccessfully = true;
+            } else {
+                console.error("Échec critique du chargement depuis localStorage. Les données corrompues vont être effacées.");
+                localStorage.removeItem('classroomPlanState');
             }
-            if (!state.teacherDesk) {
-                 const defaultSingleDeskWidth = 100;
-                 const defaultSingleDeskHeight = 60;
-                 state.teacherDesk = {
-                     id: 'teacher-desk',
-                     x: 1000, y: 150,
-                     width: defaultSingleDeskWidth * 1.1,
-                     height: defaultSingleDeskHeight * 1.1,
-                     rotation: 0, name: "Mon bureau"
-                 };
-            }
-            state.desks.forEach((desk, index) => {
-                if (desk.name === undefined) { desk.name = `Bureau ${index + 1}`; }
-                if (desk.rotation === undefined) { desk.rotation = 0; }
-            });
-        } else {
-            console.log("Aucune donnée trouvée, création d'une classe par défaut.");
+        }
+
+        // Si pas de données, ou si le chargement a échoué
+        if (!loadedSuccessfully) {
+            console.log("Aucune donnée valide trouvée, création d'une classe par défaut.");
+            
+            // On utilise l'état global (qui est vide) pour ajouter les éléments par défaut
             const hermione = { id: crypto.randomUUID(), firstName: 'Hermione', lastName: 'Granger' };
             const harry = { id: crypto.randomUUID(), firstName: 'Harry', lastName: 'Potter' };
             state.students.push(hermione, harry);
@@ -2327,13 +2528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const deskWidth = 190;
             const horizontalSpacing = 40;
             const numCols = 4;
-            const totalWidthOfDesks = (numCols * deskWidth) + ((numCols - 1) * horizontalSpacing); // 760 + 120 = 880
             const startX = 50;
-            
-            const defaultBoardWidth = 190 * 4; // 760
-            const boardX = startX + (totalWidthOfDesks / 2) - (defaultBoardWidth / 2); // 50 + 440 - 380 = 110
-
-            state.board = { x: boardX, y: 20, width: defaultBoardWidth, height: 20 };
             
             const deskHeight = 60;
             const verticalSpacing = 50;
@@ -2346,18 +2541,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const defaultSingleDeskWidth = 100;
-            const defaultSingleDeskHeight = 60;
-            state.teacherDesk = {
-                id: 'teacher-desk',
-                x: startX + totalWidthOfDesks + 50, y: startY,
-                width: defaultSingleDeskWidth * 1.1,
-                height: defaultSingleDeskHeight * 1.1,
-                rotation: 0, name: "Mon bureau"
-            };
-
-            saveState();
+            saveState(); // Sauvegarder l'état par défaut
         }
+
+        // GESTION POST-CHARGEMENT / POST-CRÉATION
+        // Ceci s'exécute dans tous les cas pour garantir l'existence du tableau et du bureau prof
+        if (!state.board) {
+             const caWidth = classroomArea.offsetWidth || 1024;
+             const deskWidth = 190;
+             const horizontalSpacing = 40;
+             const numCols = 4;
+             const totalWidthOfDesks = (numCols * deskWidth) + ((numCols - 1) * horizontalSpacing); // 880
+             const startX = 50;
+             const defaultBoardWidth = 190 * 4; // 760
+             const boardX = startX + (totalWidthOfDesks / 2) - (defaultBoardWidth / 2); // 110
+
+             state.board = { x: boardX, y: 20, width: defaultBoardWidth, height: 20 };
+             if(loadedSuccessfully) console.warn("[Best Effort Load] Aucun tableau valide trouvé. Un tableau par défaut a été créé.");
+        }
+        
+        if (!state.teacherDesk) {
+             const defaultSingleDeskWidth = 100;
+             const defaultSingleDeskHeight = 60;
+             state.teacherDesk = {
+                 id: 'teacher-desk',
+                 x: 1000, y: 150, // Coords par défaut génériques
+                 width: defaultSingleDeskWidth * 1.1,
+                 height: defaultSingleDeskHeight * 1.1,
+                 rotation: 0, name: "Mon bureau"
+             };
+             if(loadedSuccessfully) console.warn("[Best Effort Load] Aucun bureau professeur valide trouvé. Un bureau par défaut a été créé.");
+             
+             // Si on a créé une classe par défaut (pas de chargement), on place le bureau prof correctement
+             if (!loadedSuccessfully) {
+                 const deskWidth = 190;
+                 const horizontalSpacing = 40;
+                 const numCols = 4;
+                 const totalWidthOfDesks = (numCols * deskWidth) + ((numCols - 1) * horizontalSpacing);
+                 const startX = 50;
+                 const startY = 150;
+                 state.teacherDesk.x = startX + totalWidthOfDesks + 50;
+                 state.teacherDesk.y = startY;
+             }
+        }
+        
         render();
         updateStudentsInForms();
         updateAllDistances();
