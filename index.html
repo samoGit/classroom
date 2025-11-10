@@ -1,16 +1,6 @@
-<!-- Last Update: 2025-11-10 10:34 - La règle "SAME_DESK" n'accepte qu'une seule cible -->
-<!-- Last Update: 2025-11-10 10:31 - Ajout de la règle "doit être sur le même bureau" -->
-<!-- Last Update: 2025-11-10 00:32 - Maintien des noms de bureau et du texte "Libre" à l'horizontale -->
-<!-- Last Update: 2025-11-10 00:20 - Correction: Restauration des fonctions 'handleBoardMoveStart', 'handleBoardResizeStart', et 'handleDeskRotateStart' -->
-<!-- Last Update: 2025-11-10 00:19 - Correction: Met à jour l'affichage des noms après la *rotation* (et non le déplacement) -->
-<!-- Last Update: 2025-11-09 23:54 - Maintien des noms d'élèves à l'horizontale lors de la rotation des bureaux -->
-<!-- Last Update: 2025-11-09 23:46 - Déplacement du bouton de zoom (gauche/droite) et suppression du reset 100% -->
-<!-- Last Update: 2025-11-09 23:43 - L'icône du bouton de zoom change dynamiquement (gauche/droite) -->
-<!-- Last Update: 2025-11-09 23:37 - Ajout de la transparence et du déplacement pour les contrôles de zoom -->
-<!-- Last Update: 2025-11-09 23:00 - Correction bug: masque "Ajouter plusieurs" en mode édition -->
-<!-- Last Update: 2025-11-09 22:51 - Ajout modal "Ajouter plusieurs élèves" (Solution 3) -->
-<!-- Last Update: 2025-11-09 22:37 - Rendu le nom de famille optionnel. -->
-<!-- Last Update: 2025-11-09 22:01 - Ajout du bouton "Supprimer tous les élèves" -->
+<!-- Last Update: 2025-11-10 17:58 - Modification de l'algorithme de score pour "Doivent être éloignés" (médiane) -->
+<!-- Last Update: 2025-11-10 12:20 - Correction d'une race condition/cache périmé lors de l'appel à updateAllDistances -->
+<!-- ... (previous version tags) ... -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -198,7 +188,7 @@
                             <label for="rule-type" class="block font-medium">Règle :</label>
                             <select id="rule-type" class="w-full border rounded-md p-1 mt-1">
                                 <option value="MUST_BE_NEAR">Doit être proche de</option>
-                                <option value="FAR_FROM">Doit être éloigné de</option>
+                                <option value="FAR_FROM">Doivent être éloignés</option>
                                 <option value="SAME_DESK">Doit être sur le même bureau</option>
                                 <option value="NEAR_BOARD">Doit être proche du tableau</option>
                                 <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
@@ -304,10 +294,11 @@
                             <strong>Doit être proche de :</strong> Le score pour une paire d'élèves est de 100% s'ils sont sur le même bureau. Sinon, il diminue proportionnellement à la distance qui les sépare. Une paire d'élèves aux deux places les plus éloignées possibles obtient 0%.
                         </li>
                         <li>
-                            <strong>Doit être éloigné de :</strong> C'est l'inverse de la règle précédente. Une paire d'élèves aux deux places les plus éloignées possible obtient 100%. S'ils sont sur le même bureau, le score est de 0%.
+                            <!-- MODIFIÉ : Mise à jour de l'explication de la règle -->
+                            <strong>Doivent être éloignés :</strong> (Règle de groupe) Le score est basé sur la <strong>paire d'élèves la plus proche</strong> (le "maillon faible"). Le score est <strong>0%</strong> s'ils sont sur le même bureau. Sinon, leur distance est comparée à la <strong>distance médiane</strong> de la classe. Pour avoir 100%, la paire la plus proche doit être au moins aussi éloignée que cette médiane.
                         </li>
                          <li>
-                            <strong>Élève non placé :</strong> Si l'élève concerné par une règle n'est pas placé, la règle obtient <strong>0%</strong>. Si un des élèves cibles n'est pas placé, seule la partie de la règle le concernant obtient 0%, ce qui est ensuite moyenné avec les autres.
+                            <strong>Élève non placé :</strong> Si l'élève concerné par une règle (ou un élève dans une règle de groupe) n'est pas placé, la règle (ou la partie de la règle le concernant) obtient <strong>0%</strong>.
                         </li>
                     </ul>
                 </div>
@@ -418,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let ruleScores = new Map();
     let zoomLevel = 1.0;
     let selectedDeskIds = new Set();
+    let medianInterSeatDistance = 0; // <-- AJOUT: Variable pour stocker la distance cible (médiane)
     
     // --- DOM ELEMENTS ---
     const classroomArea = document.getElementById('classroom-area');
@@ -472,16 +464,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function migrateState(stateToMigrate) {
         if (stateToMigrate && stateToMigrate.rules) {
             stateToMigrate.rules.forEach(rule => {
-                // Check for old format (single targetStudentId) and convert it
+                // Migration pour les règles "targetStudentId" (ancienne structure)
                 if (rule.targetStudentId && !rule.targetStudentIds) {
                     rule.targetStudentIds = [rule.targetStudentId];
                 }
-                delete rule.targetStudentId; // Remove old property
+                delete rule.targetStudentId; // Supprime l'ancienne propriété
 
-                // Ensure targetStudentIds is always an array, even if empty
                 if (!rule.targetStudentIds) {
                     rule.targetStudentIds = [];
                 }
+
+                // --- MIGRATION POUR FAR_FROM ---
+                // Si la règle est "FAR_FROM" et que "studentId" est défini, c'est l'ancien format.
+                if (rule.type === 'FAR_FROM' && rule.studentId) {
+                    // On ajoute l'élève source à la liste des élèves "cibles" (qui devient "concernés")
+                    if (!rule.targetStudentIds.includes(rule.studentId)) {
+                        rule.targetStudentIds.push(rule.studentId);
+                    }
+                    // On efface l'élève source, car la règle est maintenant une règle de groupe
+                    rule.studentId = null;
+                }
+                // --- FIN MIGRATION ---
             });
         }
         return stateToMigrate;
@@ -765,7 +768,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switch (rule.type) {
                 case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
-                case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
+                // --- MODIFIÉ : Change le texte affiché pour la règle de groupe ---
+                case 'FAR_FROM': ruleText = `Le groupe (<b>${targetText}</b>) doit être éloigné`; break;
+                // --- FIN MODIFICATION ---
                 case 'SAME_DESK': ruleText = `<b>${studentName}</b> doit être sur le même bureau que ${targetText}`; break;
                 case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
                 case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
@@ -1487,16 +1492,26 @@ document.addEventListener('DOMContentLoaded', () => {
     addRuleForm.addEventListener('submit', e => {
         e.preventDefault();
         const editingIndex = document.getElementById('editing-rule-index').value;
-        const studentId = document.getElementById('rule-student').value;
+        let studentId = document.getElementById('rule-student').value; // 'let' au lieu de 'const'
         const type = document.getElementById('rule-type').value;
         const targetStudentSelect = document.getElementById('rule-target-student');
         // Filtre les valeurs vides (ex: "-- Choisir --")
         const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value).filter(val => val !== "");
 
-        if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
-        if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
-        
+        // --- AJOUT : Logique spécifique pour la règle de groupe ---
+        if (type === 'FAR_FROM') {
+            studentId = null; // La règle de groupe n'a pas d'élève source
+            if (targetStudentIds.length < 2) {
+                showNotification("Veuillez sélectionner au moins deux élèves pour cette règle de groupe."); 
+                return;
+            }
+        } else { // Logique existante pour les autres règles
+            if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
+            if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
+            if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.includes(studentId)) { showNotification("Un élève ne peut pas avoir une règle avec lui-même."); return; }
+        }
+        // --- FIN AJOUT ---
+
         const newRule = { studentId, type, targetStudentIds };
 
         if (editingIndex !== '') {
@@ -1515,18 +1530,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const type = ruleTypeSelect.value;
         const targetStudentSelect = document.getElementById('rule-target-student');
         
-        const hideTarget = ['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type);
-        ruleTargetContainer.style.display = hideTarget ? 'none' : 'block';
+        // --- MODIFIÉ : Gestion de l'affichage des champs de formulaire ---
+        const studentSelectContainer = document.getElementById('rule-student').parentElement;
+        const targetSelectContainer = document.getElementById('rule-target-container');
+        const targetSelectLabel = targetSelectContainer.querySelector('label');
 
-        // --- Logique de sélection simple/multiple ---
-        if (type === 'SAME_DESK') {
+        if (type === 'FAR_FROM') {
+            // Règle de groupe : on cache l'élève source, on montre la liste de groupe
+            studentSelectContainer.style.display = 'none';
+            targetSelectContainer.style.display = 'block';
+            targetSelectLabel.textContent = 'Élève(s) concerné(s) :';
+            targetStudentSelect.multiple = true;
+            targetStudentSelect.classList.add('h-24');
+
+        } else if (type === 'SAME_DESK') {
+            // Règle de binôme : on montre les deux champs, la cible est unique
+            studentSelectContainer.style.display = 'block';
+            targetSelectContainer.style.display = 'block';
+            targetSelectLabel.textContent = 'Élève(s) cible(s) :';
             targetStudentSelect.multiple = false;
             targetStudentSelect.classList.remove('h-24');
-        } else {
+
+        } else if (['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type)) {
+            // Règle "un-à-aucun" : on cache la cible
+            studentSelectContainer.style.display = 'block';
+            targetSelectContainer.style.display = 'none';
+        
+        } else { // Cas par défaut (ex: MUST_BE_NEAR)
+            // Règle "un-à-plusieurs" : on montre tout
+            studentSelectContainer.style.display = 'block';
+            targetSelectContainer.style.display = 'block';
+            targetSelectLabel.textContent = 'Élève(s) cible(s) :';
             targetStudentSelect.multiple = true;
             targetStudentSelect.classList.add('h-24');
         }
-        // --- Fin de la logique ---
+        // --- FIN MODIFICATION ---
     });
     
     rulesList.addEventListener('click', (e) => {
@@ -1557,9 +1595,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateAllDistances() {
-        updateAllSeatDistances();
-        updateTeacherDeskDistances();
-        updateAllInterSeatDistances();
+        // --- MODIFICATION : Réorganisation pour éviter les "race conditions" ---
+        // 1. Mettre à jour les caches de distance SANS calculer les scores
+        _updateAllSeatDistances_Cache();
+        _updateTeacherDeskDistances_Cache();
+        _updateAllInterSeatDistances_Cache();
+        
+        // 2. Calculer les scores UNE SEULE FOIS, quand tous les caches sont prêts
+        calculateAndStoreAllRuleScores();
+        // --- FIN MODIFICATION ---
     }
 
     function getAllSeatCoordinates() {
@@ -1589,7 +1633,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return allSeats;
     }
 
-    function updateAllSeatDistances() {
+    // --- MODIFIÉ : Renommée en _Cache et ne calcule plus les scores ---
+    function _updateAllSeatDistances_Cache() {
         if (!state.board) return;
         seatDistancesCache.clear();
         const boardCenter = getCenterOfStateObject(state.board);
@@ -1601,10 +1646,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         console.log("Distances verticales au tableau recalculées.");
-        calculateAndStoreAllRuleScores();
+        // calculateAndStoreAllRuleScores(); // <-- SUPPRIMÉ
     }
     
-    function updateTeacherDeskDistances() {
+    // --- MODIFIÉ : Renommée en _Cache et ne calcule plus les scores ---
+    function _updateTeacherDeskDistances_Cache() {
         if (!state.teacherDesk) return;
         teacherDeskDistancesCache.clear();
         const teacherDeskCenter = getCenterOfStateObject(state.teacherDesk);
@@ -1616,10 +1662,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         console.log("Distances au bureau du professeur recalculées.");
-        calculateAndStoreAllRuleScores();
+        // calculateAndStoreAllRuleScores(); // <-- SUPPRIMÉ
     }
 
-    function updateAllInterSeatDistances() {
+    // --- MODIFIÉ : Renommée en _Cache et ne calcule plus les scores ---
+    function _updateAllInterSeatDistances_Cache() {
         interSeatDistancesCache.clear();
         const allSeats = getAllSeatCoordinates();
         for(let i = 0; i < allSeats.length; i++) {
@@ -1632,39 +1679,58 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         console.log(`Matrice des distances entre places calculée (${interSeatDistancesCache.size} paires).`);
-        calculateAndStoreAllRuleScores();
+        
+        // --- AJOUT : Calculer la distance médiane ---
+        const allDistances = Array.from(interSeatDistancesCache.values());
+        // On ne garde que les distances > 0 (on exclut les paires sur le même bureau)
+        const betweenDeskDistances = allDistances.filter(d => d > 0);
+        if (betweenDeskDistances.length === 0) {
+            medianInterSeatDistance = 0;
+        } else {
+            betweenDeskDistances.sort((a, b) => a - b);
+            const midIndex = Math.floor(betweenDeskDistances.length / 2);
+            medianInterSeatDistance = betweenDeskDistances[midIndex];
+        }
+        console.log(`Distance médiane (cible 100%) calculée: ${medianInterSeatDistance.toFixed(2)}px`);
+        // --- FIN AJOUT ---
     }
     
     function calculateAndStoreAllRuleScores() {
         ruleScores.clear();
         state.rules.forEach((rule, index) => {
             let score = 0;
-            let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
-            
-            if (studentIsPlaced) {
-                switch (rule.type) {
-                    case 'NEAR_BOARD':
-                        score = scoreNearBoardRule(rule, state.placements);
-                        break;
-                    case 'NEAR_TEACHER_DESK':
-                        score = scoreNearTeacherDeskRule(rule, state.placements);
-                        break;
-                    case 'ISOLATED':
-                        score = scoreIsolateRule(rule, state.placements);
-                        break;
-                    case 'MUST_BE_NEAR':
-                        score = scoreMustBeNearRule(rule, state.placements);
-                        break;
-                    case 'FAR_FROM':
-                        score = scoreFarFromRule(rule, state.placements);
-                        break;
-                    case 'SAME_DESK':
-                        score = scoreSameDeskRule(rule, state.placements);
-                        break;
-                    default:
-                        score = 100;
+
+            // --- MODIFIÉ : Logique de score séparée pour la règle de groupe ---
+            if (rule.type === 'FAR_FROM') {
+                score = scoreGroupFarFromRule(rule, state.placements);
+            } else {
+                // Logique existante pour toutes les autres règles (basées sur 1 élève source)
+                let studentIsPlaced = getStudentSeatId(rule.studentId, state.placements) !== null;
+                
+                if (studentIsPlaced) {
+                    switch (rule.type) {
+                        case 'NEAR_BOARD':
+                            score = scoreNearBoardRule(rule, state.placements);
+                            break;
+                        case 'NEAR_TEACHER_DESK':
+                            score = scoreNearTeacherDeskRule(rule, state.placements);
+                            break;
+                        case 'ISOLATED':
+                            score = scoreIsolateRule(rule, state.placements);
+                            break;
+                        case 'MUST_BE_NEAR':
+                            score = scoreMustBeNearRule(rule, state.placements);
+                            break;
+                        // 'FAR_FROM' est maintenant géré au-dessus
+                        case 'SAME_DESK':
+                            score = scoreSameDeskRule(rule, state.placements);
+                            break;
+                        default:
+                            score = 100;
+                    }
                 }
             }
+            // --- FIN MODIFICATION ---
             ruleScores.set(index, score);
         });
         updateOverallScoreDisplay();
@@ -1732,7 +1798,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const studentSeatId = getStudentSeatId(studentId, placements);
         if (!studentSeatId) return 0;
 
-        const [studentDeskId] = studentSeatId.split('-');
+        // const [studentDeskId] = studentSeatId.split('-'); // <-- BUG
+        const studentDeskId = studentSeatId.substring(0, studentSeatId.lastIndexOf('-')); // <-- FIX
         const deskPlacement = placements[studentDeskId] || [];
         const isSharingDesk = deskPlacement.some(id => id !== null && id !== studentId);
 
@@ -1772,8 +1839,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetSeatId = getStudentSeatId(targetId, placements);
             if (!targetSeatId) return 0;
 
-            const studentDeskId = studentSeatId.split('-')[0];
-            const targetDeskId = targetSeatId.split('-')[0];
+            // const studentDeskId = studentSeatId.split('-')[0]; // <-- BUG
+            // const targetDeskId = targetSeatId.split('-')[0]; // <-- BUG
+            const studentDeskId = studentSeatId.substring(0, studentSeatId.lastIndexOf('-')); // <-- FIX
+            const targetDeskId = targetSeatId.substring(0, targetSeatId.lastIndexOf('-')); // <-- FIX
             if (studentDeskId === targetDeskId) return 100;
             
             const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
@@ -1799,60 +1868,158 @@ document.addEventListener('DOMContentLoaded', () => {
         return totalScore / individualScores.length;
     }
     
+    // --- MODIFIÉ : Remplacement complet de la fonction par le nouvel algorithme "Maillon Faible / Médiane" ---
+    function scoreGroupFarFromRule(rule, placements) {
+        const studentIds = rule.targetStudentIds || [];
+        if (studentIds.length < 2) {
+            return 100; // Pas de paires, la règle est respectée
+        }
+
+        const pairs = [];
+        for (let i = 0; i < studentIds.length; i++) {
+            for (let j = i + 1; j < studentIds.length; j++) {
+                pairs.push([studentIds[i], studentIds[j]]);
+            }
+        }
+
+        if (pairs.length === 0) {
+            return 100;
+        }
+
+        if (medianInterSeatDistance === 0) {
+             // Cas rare: pas de distances inter-bureaux (ex: 1 seul bureau)
+             // Si on est ici, on vérifie juste qu'ils ne sont pas sur le même bureau (ce qui est impossible s'il n'y en a qu'un)
+             // Mais si le cache est vide pour une raison X, on retourne 100 pour éviter un / 0
+            return 100;
+        }
+
+        let minDistanceInGroup = Infinity;
+
+        for (const [idA, idB] of pairs) {
+            const seatA = getStudentSeatId(idA, placements);
+            const seatB = getStudentSeatId(idB, placements);
+
+            if (!seatA || !seatB) {
+                minDistanceInGroup = 0; // Un élève n'est pas placé = 0
+                break; // Arrête la boucle, le score sera 0
+            }
+
+            const deskA = seatA.substring(0, seatA.lastIndexOf('-'));
+            const deskB = seatB.substring(0, seatB.lastIndexOf('-'));
+
+            if (deskA === deskB) {
+                minDistanceInGroup = 0; // Ils sont sur le même bureau = 0
+                break; // Arrête la boucle, le score sera 0
+            }
+
+            const key = [seatA, seatB].sort().join('--');
+            const actualDistance = interSeatDistancesCache.get(key);
+            
+            if (actualDistance === undefined) {
+                // Ne devrait plus arriver grâce à la réorganisation de 'updateAllDistances', mais sécurité
+                console.error(`Erreur cache: Clé "${key}" non trouvée lors du calcul de score.`);
+                minDistanceInGroup = 0;
+                break;
+            }
+
+            if (actualDistance < minDistanceInGroup) {
+                minDistanceInGroup = actualDistance;
+            }
+        }
+
+        if (minDistanceInGroup === 0) {
+            return 0; // Hard fail (même bureau ou non placé)
+        }
+
+        // Calcul final: (distMin / médiane) * 100, plafonné à 100%
+        const rawScore = (minDistanceInGroup / medianInterSeatDistance) * 100;
+        return Math.min(rawScore, 100);
+    }
+    // --- FIN DE LA MODIFICATION ---
+
+    // --- AJOUT : Fonction manquante pour la règle "SAME_DESK" ---
     function scoreSameDeskRule(rule, placements) {
         const studentSeatId = getStudentSeatId(rule.studentId, placements);
         if (!studentSeatId) return 0;
-        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100; // Pas de cible, règle non enfreinte
+        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100;
 
-        const studentDeskId = studentSeatId.split('-')[0];
+        const studentDeskId = studentSeatId.substring(0, studentSeatId.lastIndexOf('-'));
 
+        // La règle a été configurée pour n'avoir qu'une cible, mais on la traite
+        // comme une liste pour être robuste (ex: moyenne si plusieurs cibles par erreur)
         const individualScores = rule.targetStudentIds.map(targetId => {
             const targetSeatId = getStudentSeatId(targetId, placements);
             if (!targetSeatId) return 0; // Cible non placée
 
-            const targetDeskId = targetSeatId.split('-')[0];
+            const targetDeskId = targetSeatId.substring(0, targetSeatId.lastIndexOf('-'));
+            
             return (studentDeskId === targetDeskId) ? 100 : 0;
         });
 
         const totalScore = individualScores.reduce((sum, score) => sum + score, 0);
         return totalScore / individualScores.length;
     }
+    // --- FIN AJOUT ---
 
     function calculatePlacementScore(placements) {
         if (state.rules.length === 0) return 100;
 
         let totalScore = 0;
+        let validRuleCount = 0; // <-- AJOUT
+
         for (const rule of state.rules) {
-            let ruleScore = 0;
-            let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
             
-            if (studentIsPlaced) {
-                switch (rule.type) {
-                    case 'NEAR_BOARD':
-                        ruleScore = scoreNearBoardRule(rule, placements);
-                        break;
-                    case 'NEAR_TEACHER_DESK':
-                        ruleScore = scoreNearTeacherDeskRule(rule, placements);
-                        break;
-                    case 'ISOLATED':
-                        ruleScore = scoreIsolateRule(rule, placements);
-                        break;
-                    case 'MUST_BE_NEAR':
-                        ruleScore = scoreMustBeNearRule(rule, placements);
-                        break;
-                    case 'FAR_FROM':
-                        ruleScore = scoreFarFromRule(rule, placements);
-                        break;
-                    case 'SAME_DESK':
-                        ruleScore = scoreSameDeskRule(rule, placements);
-                        break;
-                    default:
-                        ruleScore = 100;
+            // --- AJOUT : Vérification de sécurité ---
+            // Empêche le crash si une règle est 'undefined' ou 'null' (ex: après un import/migration)
+            if (!rule) {
+                continue;
+            }
+            // --- FIN AJOUT ---
+
+            validRuleCount++; // <-- AJOUT : On ne compte que les règles valides
+            let ruleScore = 0;
+            
+            // --- MODIFIÉ : Logique de score séparée pour l'auto-placement ---
+            if (rule.type === 'FAR_FROM') {
+                ruleScore = scoreGroupFarFromRule(rule, placements);
+            } else {
+                // studentId peut être null pour la règle FAR_FROM, c'est normal
+                // Pour les autres, on vérifie si l'élève est placé.
+                let studentIsPlaced = getStudentSeatId(rule.studentId, placements) !== null;
+                
+                if (rule.studentId === null) { 
+                    // Cas d'une règle (migrée?) qui ne devrait pas être ici, mais on évite le crash
+                } else if (studentIsPlaced) {
+                    switch (rule.type) {
+                        case 'NEAR_BOARD':
+                            ruleScore = scoreNearBoardRule(rule, placements);
+                            break;
+                        case 'NEAR_TEACHER_DESK':
+                            ruleScore = scoreNearTeacherDeskRule(rule, placements);
+                            break;
+                        case 'ISOLATED':
+                            ruleScore = scoreIsolateRule(rule, placements);
+                            break;
+                        case 'MUST_BE_NEAR':
+                            ruleScore = scoreMustBeNearRule(rule, placements);
+                            break;
+                        // 'FAR_FROM' géré au-dessus
+                        case 'SAME_DESK':
+                            ruleScore = scoreSameDeskRule(rule, placements);
+                            break;
+                        default:
+                            ruleScore = 100;
+                    }
                 }
             }
+            // --- FIN MODIFICATION ---
             totalScore += ruleScore;
         }
-        return totalScore / state.rules.length;
+
+        // --- MODIFIÉ : Diviser par le nombre de règles valides ---
+        if (validRuleCount === 0) return 100;
+        return totalScore / validRuleCount;
+        // --- FIN MODIFICATION ---
     }
 
     autoPlaceBtn.addEventListener('click', () => {
