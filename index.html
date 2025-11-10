@@ -1,3 +1,5 @@
+<!-- Last Update: 2025-11-10 10:34 - La règle "SAME_DESK" n'accepte qu'une seule cible -->
+<!-- Last Update: 2025-11-10 10:31 - Ajout de la règle "doit être sur le même bureau" -->
 <!-- Last Update: 2025-11-10 00:32 - Maintien des noms de bureau et du texte "Libre" à l'horizontale -->
 <!-- Last Update: 2025-11-10 00:20 - Correction: Restauration des fonctions 'handleBoardMoveStart', 'handleBoardResizeStart', et 'handleDeskRotateStart' -->
 <!-- Last Update: 2025-11-10 00:19 - Correction: Met à jour l'affichage des noms après la *rotation* (et non le déplacement) -->
@@ -197,6 +199,7 @@
                             <select id="rule-type" class="w-full border rounded-md p-1 mt-1">
                                 <option value="MUST_BE_NEAR">Doit être proche de</option>
                                 <option value="FAR_FROM">Doit être éloigné de</option>
+                                <option value="SAME_DESK">Doit être sur le même bureau</option>
                                 <option value="NEAR_BOARD">Doit être proche du tableau</option>
                                 <option value="NEAR_TEACHER_DESK">Doit être proche de mon bureau</option>
                                 <option value="ISOLATED">Doit être isolé</option>
@@ -763,6 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
             switch (rule.type) {
                 case 'MUST_BE_NEAR': ruleText = `<b>${studentName}</b> doit être proche de ${targetText}`; break;
                 case 'FAR_FROM': ruleText = `<b>${studentName}</b> doit être éloigné de ${targetText}`; break;
+                case 'SAME_DESK': ruleText = `<b>${studentName}</b> doit être sur le même bureau que ${targetText}`; break;
                 case 'NEAR_BOARD': ruleText = `<b>${studentName}</b> doit être proche du tableau`; break;
                 case 'NEAR_TEACHER_DESK': ruleText = `<b>${studentName}</b> doit être proche de mon bureau`; break;
                 case 'ISOLATED': ruleText = `<b>${studentName}</b> doit être isolé`; break;
@@ -789,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const studentSelect = document.getElementById('rule-student');
         const targetStudentSelect = document.getElementById('rule-target-student');
         studentSelect.innerHTML = '<option value="">-- Choisir un élève --</option>';
-        targetStudentSelect.innerHTML = '';
+        targetStudentSelect.innerHTML = '<option value="">-- Choisir un(e) élève --</option>'; // Ajout d'une option par défaut
         state.students.forEach(s => {
             studentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
             targetStudentSelect.innerHTML += `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`;
@@ -1486,7 +1490,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const studentId = document.getElementById('rule-student').value;
         const type = document.getElementById('rule-type').value;
         const targetStudentSelect = document.getElementById('rule-target-student');
-        const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value);
+        // Filtre les valeurs vides (ex: "-- Choisir --")
+        const targetStudentIds = [...targetStudentSelect.selectedOptions].map(option => option.value).filter(val => val !== "");
 
         if (!studentId) { showNotification("Veuillez sélectionner un élève concerné."); return; }
         if (!['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type) && targetStudentIds.length === 0) { showNotification("Veuillez sélectionner au moins un élève cible."); return; }
@@ -1508,8 +1513,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ruleTypeSelect.addEventListener('change', () => {
         const type = ruleTypeSelect.value;
+        const targetStudentSelect = document.getElementById('rule-target-student');
+        
         const hideTarget = ['NEAR_BOARD', 'NEAR_TEACHER_DESK', 'ISOLATED'].includes(type);
         ruleTargetContainer.style.display = hideTarget ? 'none' : 'block';
+
+        // --- Logique de sélection simple/multiple ---
+        if (type === 'SAME_DESK') {
+            targetStudentSelect.multiple = false;
+            targetStudentSelect.classList.remove('h-24');
+        } else {
+            targetStudentSelect.multiple = true;
+            targetStudentSelect.classList.add('h-24');
+        }
+        // --- Fin de la logique ---
     });
     
     rulesList.addEventListener('click', (e) => {
@@ -1640,6 +1657,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         break;
                     case 'FAR_FROM':
                         score = scoreFarFromRule(rule, state.placements);
+                        break;
+                    case 'SAME_DESK':
+                        score = scoreSameDeskRule(rule, state.placements);
                         break;
                     default:
                         score = 100;
@@ -1779,37 +1799,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return totalScore / individualScores.length;
     }
     
-    function scoreFarFromRule(rule, placements) {
+    function scoreSameDeskRule(rule, placements) {
         const studentSeatId = getStudentSeatId(rule.studentId, placements);
         if (!studentSeatId) return 0;
-        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100;
+        if (!rule.targetStudentIds || rule.targetStudentIds.length === 0) return 100; // Pas de cible, règle non enfreinte
+
+        const studentDeskId = studentSeatId.split('-')[0];
 
         const individualScores = rule.targetStudentIds.map(targetId => {
             const targetSeatId = getStudentSeatId(targetId, placements);
-            if (!targetSeatId) return 0;
+            if (!targetSeatId) return 0; // Cible non placée
 
-            const studentDeskId = studentSeatId.split('-')[0];
             const targetDeskId = targetSeatId.split('-')[0];
-            if (studentDeskId === targetDeskId) return 0;
-            
-            const allOtherSeatIds = Array.from(seatDistancesCache.keys()).filter(id => id !== targetSeatId);
-            if (allOtherSeatIds.length === 0) return 100;
-
-            let maxDistance = 0;
-            for (const otherSeatId of allOtherSeatIds) {
-                const key = [targetSeatId, otherSeatId].sort().join('--');
-                const distance = interSeatDistancesCache.get(key) || 0;
-                if (distance > maxDistance) {
-                    maxDistance = distance;
-                }
-            }
-
-            if (maxDistance === 0) return 100;
-
-            const key = [studentSeatId, targetSeatId].sort().join('--');
-            const actualDistance = interSeatDistancesCache.get(key) || 0;
-            
-            return 100 * (actualDistance / maxDistance);
+            return (studentDeskId === targetDeskId) ? 100 : 0;
         });
 
         const totalScore = individualScores.reduce((sum, score) => sum + score, 0);
@@ -1840,6 +1842,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         break;
                     case 'FAR_FROM':
                         ruleScore = scoreFarFromRule(rule, placements);
+                        break;
+                    case 'SAME_DESK':
+                        ruleScore = scoreSameDeskRule(rule, placements);
                         break;
                     default:
                         ruleScore = 100;
