@@ -1,6 +1,5 @@
+<!-- Last Update: 2025-12-28 20:20 - Mise à jour UX Cadenas (Centré, état ouvert/fermé) -->
 <!-- Last Update: 2025-11-10 17:58 - Modification de l'algorithme de score pour "Doivent être éloignés" (médiane) -->
-<!-- Last Update: 2025-11-10 12:20 - Correction d'une race condition/cache périmé lors de l'appel à updateAllDistances -->
-<!-- ... (previous version tags) ... -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -43,23 +42,48 @@
             width: 3000px; /* Large fixed size for the "world" */
             height: 2000px;
         }
-        .seat-lock-icon {
+        
+        /* --- NOUVEAU STYLE CADENAS --- */
+        .student-lock-btn {
             position: absolute;
-            bottom: 2px;
-            right: 2px;
-            cursor: pointer;
-            padding: 2px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border-radius: 9999px; /* rounded-full */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: white;
+            border-radius: 9999px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            z-index: 15; /* Au-dessus des autres éléments */
             display: none; /* Caché par défaut */
-            z-index: 10;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
         }
-        .drop-zone:hover .seat-lock-icon.unlocked {
-            display: block; /* Montrer l'icône déverrouillée au survol */
+
+        /* État VERROUILLÉ : Toujours visible, taille normale, rouge */
+        .student-lock-btn.locked {
+            display: flex;
+            top: -9px; /* Aligné avec les autres boutons */
+            width: 22px;
+            height: 22px;
+            color: #ef4444; /* Rouge (red-500) */
+            border: 1px solid #fee2e2;
         }
-        .seat-lock-icon.locked {
-            display: block; /* Toujours montrer l'icône verrouillée */
+
+        /* État DÉVERROUILLÉ : Visible uniquement au survol, plus petit, gris */
+        .student-container:hover .student-lock-btn.unlocked {
+            display: flex;
+            top: -6px; /* Un peu plus bas car plus petit */
+            width: 18px;
+            height: 18px;
+            color: #9ca3af; /* Gris (gray-400) */
+            opacity: 0.8;
         }
+        .student-lock-btn.unlocked:hover {
+            color: #ef4444; /* Devient rouge au survol du bouton lui-même */
+            opacity: 1;
+        }
+        /* --- FIN STYLE CADENAS --- */
+
         .action-btn {
             position: absolute;
             width: 22px;
@@ -211,7 +235,7 @@
                     </div>
                 </div>
             </div>
-             <div class="text-xs text-gray-400 mt-4 text-left min-w-[300px]">Version <span id="version-display">0.15.1</span></div>
+             <div class="text-xs text-gray-400 mt-4 text-left min-w-[300px]">Version <span id="version-display">0.15.2 (UX Lock)</span></div>
         </aside>
         <button id="toggle-sidebar-btn" class="hidden md:flex absolute top-1/2 -right-3 z-20 transform -translate-y-1/2 bg-white rounded-full w-6 h-6 items-center justify-center shadow-md border border-gray-200 hover:bg-gray-100 focus:outline-none">
             <svg id="toggle-sidebar-icon" class="w-4 h-4 text-gray-600 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -629,11 +653,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     seatEl.draggable = true;
                     seatEl.dataset.studentId = placedStudentId;
                     seatEl.addEventListener('dragstart', handleDragStart);
-                    const lockBtn = document.createElement('button');
-                    lockBtn.className = 'seat-lock-icon';
+
+                    // --- NOUVELLE LOGIQUE CADENAS ---
                     const isLocked = state.lockedStudents.includes(placedStudentId);
-                    seatEl.addEventListener('click', (e) => { e.stopPropagation(); toggleStudentLock(placedStudentId); });
+                    const lockBtn = document.createElement('button');
+                    
+                    // On applique les classes de base et celle correspondant à l'état
+                    lockBtn.className = `student-lock-btn ${isLocked ? 'locked' : 'unlocked'}`;
+                    
+                    if (isLocked) {
+                        // Cadenas FERMÉ (Visible, Rouge)
+                        lockBtn.title = "Déverrouiller l'élève";
+                        lockBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" /></svg>`;
+                    } else {
+                        // Cadenas OUVERT (Petit, Gris, visible au hover)
+                        lockBtn.title = "Verrouiller l'élève";
+                        lockBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 116 0v2h2V7a5 5 0 00-5-5z" /></svg>`;
+                    }
+
+                    lockBtn.addEventListener('click', (e) => { 
+                        e.stopPropagation(); 
+                        toggleStudentLock(placedStudentId); 
+                    });
+                    
                     seatEl.appendChild(lockBtn);
+                    // --- FIN NOUVELLE LOGIQUE CADENAS ---
+
                 } else {
                     // seatEl.textContent = 'Libre'; // Ancienne méthode
                     // --- NOUVEAU : Appliquer la rotation inverse au texte "Libre" ---
@@ -1030,7 +1075,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let draggedStudentId = null;
 
     function handleDragStart(e) {
-        if (e.target.classList.contains('student-action-btn')) { e.preventDefault(); return; }
+        if (e.target.classList.contains('student-action-btn') || e.target.classList.contains('student-lock-btn')) { e.preventDefault(); return; }
         draggedStudentId = e.target.closest('[data-student-id]').dataset.studentId;
         e.dataTransfer.effectAllowed = 'move';
         setTimeout(() => e.target.closest('[data-student-id]').classList.add('dragging'), 0);
